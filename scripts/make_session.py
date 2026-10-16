@@ -9,8 +9,10 @@
 """
 
 import asyncio
-import getpass
+import os
+import re
 import subprocess
+import sys
 
 from telethon import TelegramClient
 from telethon.sessions import StringSession
@@ -23,7 +25,12 @@ def set_secret(name: str, value: str) -> None:
 
 async def main() -> None:
     api_id = int(input("api_id (с my.telegram.org): ").strip())
-    api_hash = getpass.getpass("api_hash (ввод скрыт): ").strip()
+    # Обычный ввод, а не скрытый: в консоли Windows скрытое поле не принимает вставку Ctrl+V.
+    api_hash = input("api_hash (32 символа, можно вставить Ctrl+V или правой кнопкой): ").strip()
+    if not re.fullmatch(r"[0-9a-f]{32}", api_hash):
+        sys.exit("Похоже, api_hash вставился неверно: нужны ровно 32 символа 0-9 и a-f. Запустите скрипт ещё раз.")
+    # Очищаем экран, чтобы ключ не оставался видимым.
+    os.system("cls" if os.name == "nt" else "clear")
     client = TelegramClient(StringSession(), api_id, api_hash)
     await client.start()  # спросит телефон, код и пароль двухэтапной проверки, если он есть
     me = await client.get_me()
