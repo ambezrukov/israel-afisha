@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Афиша Израиля</title>
+  <meta name="description" content="Концерты, спектакли, лекции, выставки и экскурсии в Израиле — ежедневная сводка из Telegram-каналов.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+</head>
+<body>
+  <header class="hero">
+    <div class="wrap">
+      <h1>Афиша Израиля</h1>
+      <p class="sub">Концерты, театр, лекции, выставки и экскурсии — сводка из Telegram-каналов, обновляется каждое утро.</p>
+      <p class="meta" id="meta">Загрузка…</p>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section aria-labelledby="top-h">
+      <div class="section-head">
+        <h2 id="top-h">Топ-10 ближайших</h2>
+        <span class="hint" id="top-hint"></span>
+      </div>
+      <ol class="top" id="top"></ol>
+    </section>
+
+    <section aria-labelledby="all-h">
+      <div class="section-head">
+        <h2 id="all-h">Все события</h2>
+        <span class="hint" id="count"></span>
+      </div>
+
+      <div class="filters" id="filters">
+        <input type="search" id="q" placeholder="Поиск: название, площадка, артист…" aria-label="Поиск">
+        <div class="row">
+          <label>Где
+            <select id="place"></select>
+          </label>
+          <label>Когда
+            <select id="when">
+              <option value="all">Любые даты</option>
+              <option value="today">Сегодня</option>
+              <option value="tomorrow">Завтра</option>
+              <option value="weekend">Ближайшие выходные</option>
+              <option value="week">7 дней</option>
+              <option value="month">30 дней</option>
+            </select>
+          </label>
+          <label>День
+            <select id="dow">
+              <option value="all">Любой</option>
+              <option value="weekday">Будни</option>
+              <option value="fri">Пятница</option>
+              <option value="sat">Суббота</option>
+            </select>
+          </label>
+          <label>Язык
+            <select id="lang">
+              <option value="all">Любой</option>
+              <option value="ru">Русский</option>
+              <option value="he">Иврит</option>
+              <option value="en">Английский</option>
+              <option value="none">Язык не важен</option>
+            </select>
+          </label>
+          <label>Цена
+            <select id="price">
+              <option value="all">Любая</option>
+              <option value="free">Бесплатно</option>
+              <option value="100">До 100 ₪</option>
+              <option value="200">До 200 ₪</option>
+            </select>
+          </label>
+        </div>
+        <div class="chips" id="cats" role="group" aria-label="Вид мероприятия"></div>
+        <div class="toggles">
+          <label class="toggle"><input type="checkbox" id="kids"> Подходит детям</label>
+          <label class="toggle"><input type="checkbox" id="oneoff"> Только разовые</label>
+          <label class="toggle"><input type="checkbox" id="fresh"> Новое за сутки</label>
+          <button type="button" class="reset" id="reset">Сбросить</button>
+        </div>
+      </div>
+
+      <div id="list"></div>
+    </section>
+  </main>
+
+  <footer class="wrap foot">
+    Данные собраны автоматически из открытых Telegram-каналов; описания — краткий пересказ.
+    Перед походом проверяйте детали по ссылке на источник.
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>

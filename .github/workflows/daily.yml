@@ -1,0 +1,43 @@
+name: Ежедневный сбор афиши
+
+on:
+  schedule:
+    - cron: "0 4 * * *"   # 07:00 по Израилю летом, 06:00 зимой
+  workflow_dispatch: {}    # ручной запуск кнопкой в GitHub
+
+permissions:
+  contents: write
+
+concurrency:
+  group: daily-afisha
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Сбор и разбор постов
+        env:
+          TG_API_ID: ${{ secrets.TG_API_ID }}
+          TG_API_HASH: ${{ secrets.TG_API_HASH }}
+          TG_SESSION: ${{ secrets.TG_SESSION }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: python -m afisha.main
+
+      - name: Сохранить результат
+        run: |
+          git config user.name "afisha-bot"
+          git config user.email "afisha-bot@users.noreply.github.com"
+          git add docs/data/events.json state/state.json
+          git diff --cached --quiet || git commit -m "Афиша: обновление $(date -u +%F)"
+          git push
