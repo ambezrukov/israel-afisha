@@ -21,42 +21,7 @@
   </header>
 
   <main class="wrap">
-    <section aria-labelledby="top-h">
-      <div class="section-head">
-        <h2 id="top-h">Топ-10 ближайших</h2>
-        <div class="seg" role="group" aria-label="Какой топ показать">
-          <button type="button" data-mode="all">Общий</button>
-          <button type="button" data-mode="mine">Мой</button>
-        </div>
-      </div>
-      <p class="hint top-hint" id="top-hint"></p>
-      <div class="my-settings" id="my-settings" hidden>
-        <div class="row">
-          <label>Мой регион
-            <select id="my-region"></select>
-          </label>
-          <label>Язык
-            <select id="my-lang">
-              <option value="all">Любой</option>
-              <option value="ru">Русский</option>
-              <option value="he">Иврит</option>
-              <option value="en">Английский</option>
-            </select>
-          </label>
-        </div>
-        <div class="chips" id="my-cats" role="group" aria-label="Что мне интересно"></div>
-        <label class="toggle"><input type="checkbox" id="my-kids"> Хожу с детьми</label>
-        <p class="hint">Настройки и оценки 👍/👎 хранятся только на этом устройстве.</p>
-      </div>
-      <ol class="top" id="top"></ol>
-    </section>
-
-    <section aria-labelledby="all-h">
-      <div class="section-head">
-        <h2 id="all-h">Все события</h2>
-        <span class="hint" id="count"></span>
-      </div>
-
+    <section class="filters-wrap" aria-label="Фильтры">
       <div class="filters" id="filters">
         <input type="search" id="q" placeholder="Поиск: название, площадка, артист…" aria-label="Поиск">
         <div class="row">
@@ -106,6 +71,44 @@
           <label class="toggle"><input type="checkbox" id="fresh"> Новое за сутки</label>
           <button type="button" class="reset" id="reset">Сбросить</button>
         </div>
+      </div>
+
+    </section>
+
+    <section aria-labelledby="top-h">
+      <div class="section-head">
+        <h2 id="top-h">Топ-10 ближайших</h2>
+        <div class="seg" role="group" aria-label="Какой топ показать">
+          <button type="button" data-mode="all">Общий</button>
+          <button type="button" data-mode="mine">Мой</button>
+        </div>
+      </div>
+      <p class="hint top-hint" id="top-hint"></p>
+      <div class="my-settings" id="my-settings" hidden>
+        <div class="row">
+          <label>Мой регион
+            <select id="my-region"></select>
+          </label>
+          <label>Язык
+            <select id="my-lang">
+              <option value="all">Любой</option>
+              <option value="ru">Русский</option>
+              <option value="he">Иврит</option>
+              <option value="en">Английский</option>
+            </select>
+          </label>
+        </div>
+        <div class="chips" id="my-cats" role="group" aria-label="Что мне интересно"></div>
+        <label class="toggle"><input type="checkbox" id="my-kids"> Хожу с детьми</label>
+        <p class="hint">Настройки и оценки 👍/👎 хранятся только на этом устройстве.</p>
+      </div>
+      <ol class="top" id="top"></ol>
+    </section>
+
+    <section aria-labelledby="all-h">
+      <div class="section-head">
+        <h2 id="all-h">Все события</h2>
+        <span class="hint" id="count"></span>
       </div>
 
       <div id="list"></div>

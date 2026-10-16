@@ -225,7 +225,8 @@
     const v = VOTES[e.id];
     return `<span class="votes" data-vote-id="${esc(e.id)}">
       <button type="button" class="vote" data-vote="up" aria-pressed="${v === "up"}" title="Интересно — закрепить в моём топе">👍</button>
-      <button type="button" class="vote" data-vote="down" aria-pressed="${v === "down"}" title="Неинтересно — убрать из моего топа">👎</button></span>`;
+      <button type="button" class="vote" data-vote="hide" aria-pressed="${v === "hide"}" title="Скрыть из моего топа (не подходит дата, место, настроение)">✕</button>
+      <button type="button" class="vote" data-vote="down" aria-pressed="${v === "down"}" title="Не моё — такое показывать реже">👎</button></span>`;
   }
   function vote(id, v) {
     const next = VOTES[id] === v ? "none" : v;
@@ -243,16 +244,12 @@
     render();
   }
 
-  // ---------- Топ ----------
-  // Ближайший подходящий сеанс в окне топа; для «Моего топа» — предпочтительно в домашнем регионе.
-  function topSession(e, to, home) {
-    const ms = e.sessions.filter(placeMatch)
-      .map((s) => ({ s, day: s.date > today ? s.date : today }))
-      .filter((m) => sessEnd(m.s) >= today && m.day <= to)
-      .sort((a, b) => a.day.localeCompare(b.day));
-    if (!ms.length) return null;
-    return (home && home !== "all" && ms.find((m) => m.s.region === home)) || ms[0];
+  function filtersActive() {
+    return !!(prefs.q || prefs.place !== "all" || prefs.when !== "all" || prefs.dow !== "all" || prefs.lang !== "all"
+      || prefs.price !== "all" || prefs.cats.length || prefs.kids || prefs.oneoff || prefs.fresh);
   }
+
+  // ---------- Топ ----------
   function myScore(e, m) {
     let score, home;
     if (OWNER) {
@@ -273,23 +270,31 @@
     return score;
   }
   function renderTop() {
-    const to = addDays(today, TOP_WINDOW_DAYS - 1);
+    // Топ подчиняется тем же фильтрам, что и список; без выбранных дат — ближайшие 30 дней.
+    const [from, rangeTo] = dateRange();
+    const to = prefs.when === "all" ? addDays(today, TOP_WINDOW_DAYS - 1) : rangeTo;
     const mine = prefs.topMode === "mine";
     const home = mine ? (OWNER ? PROFILE.home_region : prefs.myRegion) : null;
     const items = [];
     for (const e of EVENTS) {
-      if (mine && VOTES[e.id] === "down") continue;
+      if (mine && (VOTES[e.id] === "down" || VOTES[e.id] === "hide")) continue;
+      if (!eventMatches(e)) continue;
       // Анонсы любимых артистов в «Моём топе» видны и дальше, чем на 30 дней вперёд.
-      const m = topSession(e, mine && OWNER && e.favorite_artist ? "9999-12-31" : to, home);
-      if (m) items.push({ e, m, score: mine ? myScore(e, m) : e.interest });
+      const far = mine && OWNER && e.favorite_artist && prefs.when === "all";
+      const ms = matchedSessions(e, from, far ? "9999-12-31" : to);
+      if (!ms.length) continue;
+      const m = (home && home !== "all" && ms.find((x) => x.s.region === home)) || ms[0];
+      items.push({ e, m, score: mine ? myScore(e, m) : e.interest });
     }
     items.sort((a, b) => b.score - a.score || a.m.day.localeCompare(b.m.day));
     const top = items.slice(0, TOP_SIZE);
     const ups = Object.values(VOTES).filter((v) => v === "up").length;
     const downs = Object.values(VOTES).filter((v) => v === "down").length;
-    $("top-hint").textContent = mine
-      ? (OWNER ? `под ваш профиль · 👍 ${ups} · 👎 ${downs}` : "по вашим настройкам")
-      : (prefs.place === "all" ? "по всей стране" : "по выбранному месту");
+    const hides = Object.values(VOTES).filter((v) => v === "hide").length;
+    const filtered = filtersActive() ? " · с учётом фильтров" : "";
+    $("top-hint").textContent = (mine
+      ? (OWNER ? `под ваш профиль · 👍 ${ups} · ✕ ${hides} · 👎 ${downs}` : "по вашим настройкам")
+      : "общий рейтинг значимости") + filtered;
     $("my-settings").hidden = !(mine && !OWNER);
     $("top").innerHTML = top.length
       ? top.map(({ e, m }) => `<li>${mine && OWNER && e.favorite_artist ? `<span class="fav">🔔 ${esc(e.favorite_artist)}</span>` : ""}

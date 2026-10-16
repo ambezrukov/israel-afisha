@@ -2,6 +2,7 @@
 //
 // Принимает 👍/👎 только от владельца (OWNER_ID): из мини-аппа — с проверкой
 // подписи Telegram (initData), из сообщений бота — по id отправителя.
+// Оценки: up — интересно, down — не моё (обе учат модель), hide — просто скрыть (не учит).
 // Утренний сбор забирает накопленные оценки через GET /api/feedback.
 //
 // Секреты (wrangler secret put): BOT_TOKEN, READ_KEY, WEBHOOK_SECRET.
@@ -77,7 +78,7 @@ async function loadVotes(env) {
 }
 async function saveVote(env, id, vote, title) {
   const votes = await loadVotes(env);
-  if (vote === "up" || vote === "down") votes[id] = { vote, title: title || votes[id]?.title || "", ts: new Date().toISOString() };
+  if (vote === "up" || vote === "down" || vote === "hide") votes[id] = { vote, title: title || votes[id]?.title || "", ts: new Date().toISOString() };
   else delete votes[id];
   await env.FEEDBACK.put(VOTES_KEY, JSON.stringify(votes));
   return votes;
@@ -128,7 +129,7 @@ async function telegramWebhook(request, env) {
   if (request.headers.get("x-telegram-bot-api-secret-token") !== env.WEBHOOK_SECRET) return new Response("forbidden", { status: 403 });
   const update = await request.json();
 
-  // Кнопки 👍/👎 под сообщениями бота: callback_data = "v|up|<id>" или "v|down|<id>".
+  // Кнопки под сообщениями бота: callback_data = "v|up|<id>", "v|hide|<id>" или "v|down|<id>".
   const cb = update.callback_query;
   if (cb) {
     const [kind, vote, id] = String(cb.data || "").split("|");
@@ -136,7 +137,8 @@ async function telegramWebhook(request, env) {
       await tg(env, "answerCallbackQuery", { callback_query_id: cb.id, text: "Оценки принимаются только от владельца афиши" });
     } else {
       await saveVote(env, id, vote, await eventTitle(env, id));
-      await tg(env, "answerCallbackQuery", { callback_query_id: cb.id, text: vote === "up" ? "👍 Учтено" : "👎 Учтено — уберу из вашего топа" });
+      const answers = { up: "👍 Учтено", hide: "✕ Скрыто из вашего топа", down: "👎 Учтено — такое показывать реже" };
+      await tg(env, "answerCallbackQuery", { callback_query_id: cb.id, text: answers[vote] || "Учтено" });
     }
     return new Response("ok");
   }

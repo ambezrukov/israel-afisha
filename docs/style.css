@@ -101,6 +101,7 @@ section { margin: 28px 0; }
 .my-settings select { width: 100%; font: inherit; color: var(--ink); background: var(--surface-2); border: 1px solid transparent; border-radius: 10px; padding: 9px 11px; }
 .my-settings .hint { margin: 0; }
 .top li { padding-bottom: 46px; }
+.filters-wrap { margin-top: 8px; }
 .top li .votes { position: absolute; right: 10px; bottom: 8px; }
 .fav { display: block; font-size: 12px; font-weight: 800; color: var(--accent); margin-bottom: 4px; }
 .votes { display: inline-flex; gap: 4px; margin-left: auto; }
@@ -115,7 +116,6 @@ section { margin: 28px 0; }
   border-radius: var(--radius);
   padding: 12px;
   display: grid; gap: 10px;
-  position: sticky; top: 0; z-index: 5;
   box-shadow: var(--shadow);
 }
 .filters input[type=search], .filters select {
