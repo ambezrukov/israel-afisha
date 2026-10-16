@@ -37,6 +37,8 @@ jobs:
           TG_API_HASH: ${{ secrets.TG_API_HASH }}
           TG_SESSION: ${{ secrets.TG_SESSION }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          FEEDBACK_URL: ${{ secrets.FEEDBACK_URL }}
+          FEEDBACK_KEY: ${{ secrets.FEEDBACK_KEY }}
         run: python -m afisha.main ${{ inputs.rescore && '--rescore' || '' }}
 
       - name: Сохранить результат

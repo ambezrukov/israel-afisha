@@ -5,6 +5,8 @@
   const TOP_SIZE = 10;
   const TOP_WINDOW_DAYS = 30;
   const STORE_KEY = "afisha-filters-v1";
+  const VOTES_KEY = "afisha-votes-v1";
+  const API = "https://israel-afisha.ambezrukov.workers.dev";
 
   const CAT_ICON = {
     "концерт": "🎵", "театр": "🎭", "стендап": "🎤", "лекция": "🗣", "выставка": "🖼",
@@ -71,11 +73,16 @@
   // ---------- Состояние ----------
   let EVENTS = [];
   let GENERATED = "";
+  let PROFILE = {};       // правила географии владельца из events.json
+  let OWNER = false;      // страница открыта владельцем в Telegram (подтверждено сервером)
+  let VOTES = {};         // id события → "up" | "down"
   const today = isoToday();
   const prefs = Object.assign(
-    { q: "", place: "all", when: "all", dow: "all", lang: "all", price: "all", cats: [], kids: false, oneoff: false, fresh: false },
+    { q: "", place: "all", when: "all", dow: "all", lang: "all", price: "all", cats: [], kids: false, oneoff: false, fresh: false,
+      topMode: "all", myRegion: "all", myCats: [], myLang: "all", myKids: false },
     loadPrefs()
   );
+  try { VOTES = JSON.parse(localStorage.getItem(VOTES_KEY)) || {}; } catch { VOTES = {}; }
 
   // Сеанс «идёт» в день d, если d в [date, end_date].
   const sessEnd = (s) => s.end_date || s.date;
@@ -207,28 +214,89 @@
         ${ticket ? `<a class="btn primary" href="${esc(ticket)}" target="_blank" rel="noopener">Билеты</a>` : ""}
         <a class="btn" href="${esc(gcalUrl(e, s, day))}" target="_blank" rel="noopener">В календарь</a>
         ${sources}
+        ${voteButtons(e)}
       </div>
       ${others}
     </article>`;
   }
 
+  // ---------- Оценки 👍/👎 ----------
+  function voteButtons(e) {
+    const v = VOTES[e.id];
+    return `<span class="votes" data-vote-id="${esc(e.id)}">
+      <button type="button" class="vote" data-vote="up" aria-pressed="${v === "up"}" title="Интересно — закрепить в моём топе">👍</button>
+      <button type="button" class="vote" data-vote="down" aria-pressed="${v === "down"}" title="Неинтересно — убрать из моего топа">👎</button></span>`;
+  }
+  function vote(id, v) {
+    const next = VOTES[id] === v ? "none" : v;
+    if (next === "none") delete VOTES[id]; else VOTES[id] = next;
+    if (OWNER) {
+      // Оценки владельца уходят на сервер и учат модель; ошибка сети не мешает работе страницы.
+      const e = EVENTS.find((x) => x.id === id);
+      fetch(API + "/api/vote", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ initData: tgApp.initData, id, vote: next, title: e ? e.title : "" }),
+      }).catch(() => {});
+    } else {
+      try { localStorage.setItem(VOTES_KEY, JSON.stringify(VOTES)); } catch { /* приватный режим */ }
+    }
+    render();
+  }
+
+  // ---------- Топ ----------
+  // Ближайший подходящий сеанс в окне топа; для «Моего топа» — предпочтительно в домашнем регионе.
+  function topSession(e, to, home) {
+    const ms = e.sessions.filter(placeMatch)
+      .map((s) => ({ s, day: s.date > today ? s.date : today }))
+      .filter((m) => sessEnd(m.s) >= today && m.day <= to)
+      .sort((a, b) => a.day.localeCompare(b.day));
+    if (!ms.length) return null;
+    return (home && home !== "all" && ms.find((m) => m.s.region === home)) || ms[0];
+  }
+  function myScore(e, m) {
+    let score, home;
+    if (OWNER) {
+      score = e.personal ?? e.interest;
+      home = PROFILE.home_region || "all";
+    } else {
+      score = e.interest
+        + (prefs.myCats.includes(e.category) ? 2 : 0)
+        + (prefs.myLang !== "all" && (e.language === prefs.myLang || e.language === "none") ? 1 : 0)
+        + (prefs.myKids && (e.kids === "yes" || e.category === "детям") ? 1 : 0);
+      home = prefs.myRegion;
+    }
+    if (home !== "all" && m.s.region !== home) {
+      score -= e.interest >= (PROFILE.major_interest || 8) ? (PROFILE.far_penalty_if_major ?? 1) : (PROFILE.far_penalty ?? 3);
+    }
+    if (VOTES[e.id] === "up") score += 50;
+    if (OWNER && e.favorite_artist) score += 100;
+    return score;
+  }
   function renderTop() {
     const to = addDays(today, TOP_WINDOW_DAYS - 1);
+    const mine = prefs.topMode === "mine";
+    const home = mine ? (OWNER ? PROFILE.home_region : prefs.myRegion) : null;
     const items = [];
     for (const e of EVENTS) {
-      const ms = e.sessions.filter(placeMatch)
-        .map((s) => ({ s, day: s.date > today ? s.date : today }))
-        .filter((m) => sessEnd(m.s) >= today && m.day <= to)
-        .sort((a, b) => a.day.localeCompare(b.day));
-      if (ms.length) items.push({ e, m: ms[0] });
+      if (mine && VOTES[e.id] === "down") continue;
+      // Анонсы любимых артистов в «Моём топе» видны и дальше, чем на 30 дней вперёд.
+      const m = topSession(e, mine && OWNER && e.favorite_artist ? "9999-12-31" : to, home);
+      if (m) items.push({ e, m, score: mine ? myScore(e, m) : e.interest });
     }
-    items.sort((a, b) => b.e.interest - a.e.interest || a.m.day.localeCompare(b.m.day));
+    items.sort((a, b) => b.score - a.score || a.m.day.localeCompare(b.m.day));
     const top = items.slice(0, TOP_SIZE);
-    $("top-hint").textContent = prefs.place === "all" ? "по всей стране" : "по выбранному месту";
+    const ups = Object.values(VOTES).filter((v) => v === "up").length;
+    const downs = Object.values(VOTES).filter((v) => v === "down").length;
+    $("top-hint").textContent = mine
+      ? (OWNER ? `под ваш профиль · 👍 ${ups} · 👎 ${downs}` : "по вашим настройкам")
+      : (prefs.place === "all" ? "по всей стране" : "по выбранному месту");
+    $("my-settings").hidden = !(mine && !OWNER);
     $("top").innerHTML = top.length
-      ? top.map(({ e, m }) => `<li><button type="button" class="link" data-id="${esc(e.id)}">
+      ? top.map(({ e, m }) => `<li>${mine && OWNER && e.favorite_artist ? `<span class="fav">🔔 ${esc(e.favorite_artist)}</span>` : ""}
+          <button type="button" class="link" data-id="${esc(e.id)}">
           <div class="t">${CAT_ICON[e.category] || ""} ${esc(e.title)}</div>
-          <div class="w">${esc(whenText(m.s, m.day))} · ${esc(m.s.city)}</div></button></li>`).join("")
+          <div class="w">${esc(whenText(m.s, m.day))} · ${esc(m.s.city)}</div></button>
+          ${voteButtons(e)}</li>`).join("")
       : `<li class="empty" style="padding-left:14px">Пока нет событий</li>`;
   }
 
@@ -297,6 +365,61 @@
       `<button type="button" class="chip" data-cat="${esc(c)}" aria-pressed="${prefs.cats.includes(c)}">${CAT_ICON[c]} ${esc(c)}</button>`
     ).join("");
   }
+  function buildMySettings() {
+    const regions = ["Север", "Центр", "Иерусалим", "Юг"];
+    $("my-region").innerHTML = `<option value="all">Вся страна</option>` + regions.map((r) => `<option value="${r}">${r}</option>`).join("");
+    $("my-region").value = prefs.myRegion;
+    $("my-lang").value = prefs.myLang;
+    $("my-kids").checked = prefs.myKids;
+    $("my-cats").innerHTML = Object.keys(CAT_ICON).filter((c) => c !== "другое").map((c) =>
+      `<button type="button" class="chip" data-cat="${esc(c)}" aria-pressed="${prefs.myCats.includes(c)}">${CAT_ICON[c]} ${esc(c)}</button>`
+    ).join("");
+  }
+  function syncSeg() {
+    for (const x of document.querySelectorAll(".seg button")) x.setAttribute("aria-pressed", x.dataset.mode === prefs.topMode);
+  }
+  function bindTop() {
+    syncSeg();
+    for (const b of document.querySelectorAll(".seg button")) {
+      b.addEventListener("click", () => { prefs.topMode = b.dataset.mode; syncSeg(); render(); });
+    }
+    $("my-region").addEventListener("change", () => { prefs.myRegion = $("my-region").value; render(); });
+    $("my-lang").addEventListener("change", () => { prefs.myLang = $("my-lang").value; render(); });
+    $("my-kids").addEventListener("change", () => { prefs.myKids = $("my-kids").checked; render(); });
+    $("my-cats").addEventListener("click", (e) => {
+      const b = e.target.closest(".chip");
+      if (!b) return;
+      const c = b.dataset.cat;
+      prefs.myCats = prefs.myCats.includes(c) ? prefs.myCats.filter((x) => x !== c) : [...prefs.myCats, c];
+      b.setAttribute("aria-pressed", prefs.myCats.includes(c));
+      render();
+    });
+    // Кнопки оценок есть и в топе, и в списке; перехватываем раньше перехода к карточке.
+    document.addEventListener("click", (e) => {
+      const b = e.target.closest("button[data-vote]");
+      if (!b) return;
+      e.stopPropagation();
+      vote(b.closest("[data-vote-id]").dataset.voteId, b.dataset.vote);
+    }, true);
+  }
+  // Владелец ли открыл страницу: сервер проверяет подпись Telegram.
+  async function detectOwner() {
+    if (!tgApp || !tgApp.initData) return;
+    try {
+      const r = await fetch(API + "/api/me", {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ initData: tgApp.initData }),
+      });
+      const data = await r.json();
+      if (data.owner) {
+        OWNER = true;
+        VOTES = data.votes || {};
+        if (!loadPrefs().topMode) prefs.topMode = "mine";
+        syncSeg();
+        render();
+      }
+    } catch { /* сервер недоступен — страница работает как для всех */ }
+  }
+
   function bind() {
     for (const id of ["place", "when", "dow", "lang", "price"]) {
       $(id).value = prefs[id];
@@ -346,13 +469,17 @@
     .then((r) => r.json())
     .then((data) => {
       GENERATED = data.generated_at || "";
+      PROFILE = data.profile || {};
       EVENTS = (data.events || []).filter((e) => e.sessions && e.sessions.some((s) => sessEnd(s) >= today));
       const when = GENERATED ? new Date(GENERATED) : null;
       $("meta").textContent = `Обновлено ${when ? when.toLocaleString("ru-RU", { timeZone: TZ, day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" }) : "—"} · событий впереди: ${EVENTS.length}`;
       buildPlaceOptions();
       buildCats();
+      buildMySettings();
       bind();
+      bindTop();
       render();
+      detectOwner();
     })
     .catch(() => { $("meta").textContent = "Не удалось загрузить данные"; });
 })();

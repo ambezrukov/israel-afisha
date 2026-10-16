@@ -1,0 +1,13 @@
+name = "israel-afisha"
+main = "src/index.js"
+compatibility_date = "2026-10-01"
+
+[vars]
+OWNER_ID = "66902800"
+SITE_URL = "https://ambezrukov.github.io/israel-afisha/"
+ALLOWED_ORIGIN = "https://ambezrukov.github.io"
+
+# Хранилище оценок (KV namespace FEEDBACK)
+[[kv_namespaces]]
+binding = "FEEDBACK"
+id = "38046f1f43ef4d39acae29287c636a9c"

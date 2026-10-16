@@ -17,6 +17,7 @@ import json
 import logging
 import os
 import tomllib
+import urllib.request
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -44,6 +45,22 @@ def load_json(path: Path, default):
     return json.loads(path.read_text(encoding="utf-8")) if path.exists() else default
 
 
+def load_feedback() -> dict:
+    """Оценки владельца с сервера (FEEDBACK_URL + FEEDBACK_KEY); при сбое — пусто, сбор не останавливаем."""
+    url, key = os.environ.get("FEEDBACK_URL"), os.environ.get("FEEDBACK_KEY")
+    if not url or not key:
+        return load_json(FEEDBACK_PATH, {})
+    try:
+        req = urllib.request.Request(url, headers={"authorization": f"Bearer {key}", "user-agent": "israel-afisha"})
+        with urllib.request.urlopen(req, timeout=20) as r:
+            data = json.loads(r.read().decode("utf-8"))
+        log.info("Оценки владельца: 👍 %d, 👎 %d", len(data.get("likes", [])), len(data.get("dislikes", [])))
+        return data
+    except Exception as err:  # noqa: BLE001
+        log.warning("Не удалось получить оценки владельца: %s", err)
+        return {}
+
+
 def batches(posts: list[tg.Post], size: int):
     batch: list[tg.Post] = []
     images = 0
@@ -68,7 +85,7 @@ async def run(dry_run: bool) -> None:
     store.renormalize()
     extractor = Extractor(
         cfg["model"]["id"], cfg["model"]["effort"], cfg["profile"],
-        load_json(FEEDBACK_PATH, {}), store.upcoming(today),
+        load_feedback(), store.upcoming(today),
     )
     tcfg = cfg["telegram"]
 
@@ -121,7 +138,7 @@ def rescore() -> None:
     store.renormalize()
     events = store.upcoming(now.date())
     extractor = Extractor(
-        cfg["model"]["id"], cfg["model"]["effort"], cfg["profile"], load_json(FEEDBACK_PATH, {}), events,
+        cfg["model"]["id"], cfg["model"]["effort"], cfg["profile"], load_feedback(), events,
     )
     scores: list[dict] = []
     for i in range(0, len(events), RESCORE_BATCH):

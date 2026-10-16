@@ -24,7 +24,29 @@
     <section aria-labelledby="top-h">
       <div class="section-head">
         <h2 id="top-h">Топ-10 ближайших</h2>
-        <span class="hint" id="top-hint"></span>
+        <div class="seg" role="group" aria-label="Какой топ показать">
+          <button type="button" data-mode="all">Общий</button>
+          <button type="button" data-mode="mine">Мой</button>
+        </div>
+      </div>
+      <p class="hint top-hint" id="top-hint"></p>
+      <div class="my-settings" id="my-settings" hidden>
+        <div class="row">
+          <label>Мой регион
+            <select id="my-region"></select>
+          </label>
+          <label>Язык
+            <select id="my-lang">
+              <option value="all">Любой</option>
+              <option value="ru">Русский</option>
+              <option value="he">Иврит</option>
+              <option value="en">Английский</option>
+            </select>
+          </label>
+        </div>
+        <div class="chips" id="my-cats" role="group" aria-label="Что мне интересно"></div>
+        <label class="toggle"><input type="checkbox" id="my-kids"> Хожу с детьми</label>
+        <p class="hint">Настройки и оценки 👍/👎 хранятся только на этом устройстве.</p>
       </div>
       <ol class="top" id="top"></ol>
     </section>
