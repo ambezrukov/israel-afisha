@@ -253,7 +253,8 @@ class Extractor:
         self.context = profile_text(profile, feedback) + "\n\n" + known_events_text(known)
 
     def _call(self, rules: str, schema: dict, content: list[dict]) -> dict | None:
-        response = self.client.beta.messages.create(
+        # Потоковый режим: при большом лимите ответа обычный запрос может упереться в таймаут.
+        with self.client.beta.messages.stream(
             model=self.model,
             max_tokens=32000,
             betas=["server-side-fallback-2026-07-01"],
@@ -267,7 +268,8 @@ class Extractor:
                 "format": {"type": "json_schema", "schema": schema},
             },
             messages=[{"role": "user", "content": content}],
-        )
+        ) as stream:
+            response = stream.get_final_message()
         if response.stop_reason == "refusal":
             log.warning("Модель отказалась обрабатывать пачку: %s", response.stop_details)
             return None
