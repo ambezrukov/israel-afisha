@@ -74,3 +74,17 @@ karolina = "Каролина"
 ravid-plotnik = "Равид Плотник"
 marina-maximilian = "Марина Максимилиан"
 lihi-toledano = "Лихи Толедано"
+
+[notify]
+# Утреннее личное сообщение от бота @IsraelAfishaBot.
+enabled = true
+chat_id = 66902800
+site_url = "https://ambezrukov.github.io/israel-afisha/"
+# Сколько лучших новых событий присылать и с какой личной оценки (после поправки на географию).
+new_count = 5
+min_score = 5
+# Как далеко вперёд смотреть для «нового» (любимых артистов — без ограничения).
+new_horizon_days = 120
+# По четвергам: сколько событий в «Моём топе на выходные».
+weekend_count = 7
+weekend_min_score = 3

@@ -107,7 +107,8 @@ async function apiFeedback(request, env) {
     Object.entries(votes).filter(([, v]) => v.vote === kind)
       .sort((a, b) => a[1].ts.localeCompare(b[1].ts))
       .map(([id, v]) => ({ id, title: v.title, ts: v.ts }));
-  return json({ likes: list("up"), dislikes: list("down") });
+  // hidden — только чтобы не присылать скрытое в утреннем сообщении; в обучение не идёт.
+  return json({ likes: list("up"), dislikes: list("down"), hidden: list("hide") });
 }
 
 // ---------- Бот ----------

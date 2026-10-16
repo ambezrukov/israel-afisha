@@ -23,7 +23,7 @@ from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from . import tg, tickchak
+from . import notify, tg, tickchak
 from .extract import Extractor
 from .store import Store
 
@@ -158,6 +158,21 @@ async def run(dry_run: bool) -> None:
         if dry_run:
             log.info("Пробный запуск: прочитанным не помечаю, позицию не сохраняю")
             return
+        # Утреннее личное сообщение — не чаще раза в день.
+        ncfg = cfg.get("notify", {})
+        bot_token = os.environ.get("TG_BOT_TOKEN")
+        if ncfg.get("enabled") and bot_token and state.get("notified") != today.isoformat() and not feedback.get("unavailable"):
+            built = notify.build(store.upcoming(today), feedback, cfg["profile"], today, ncfg)
+            if built:
+                try:
+                    notify.send(bot_token, ncfg["chat_id"], *built)
+                    log.info("Утреннее сообщение отправлено")
+                except Exception as err:  # noqa: BLE001 — сбой отправки не должен терять собранное
+                    log.warning("Не удалось отправить утреннее сообщение: %s", err)
+            else:
+                log.info("Нового для владельца нет — сообщение не отправляю")
+            state["notified"] = today.isoformat()
+
         if sig:
             state["feedback_sig"] = sig
         if tk_seen is not None:
