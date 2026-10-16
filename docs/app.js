@@ -200,7 +200,9 @@
     ].join("");
     const ticket = safeUrl(e.ticket_url);
     const sources = e.sources.map((x, i) =>
-      `<a class="btn" href="${esc(safeUrl(x.url))}" target="_blank" rel="noopener">${e.sources.length > 1 ? `Пост ${i + 1}` : "Пост в Telegram"}</a>`
+      `<a class="btn" href="${esc(safeUrl(x.url))}" target="_blank" rel="noopener">${
+        /^https:\/\/t\.me\//.test(x.url) ? (e.sources.length > 1 ? `Пост ${i + 1}` : "Пост в Telegram") : esc(x.channel)
+      }</a>`
     ).join("");
     const others = extra.length
       ? `<div class="more">Ещё: ${extra.slice(0, 6).map((o) => esc(`${human(o.day, false)}${o.s.time ? " " + o.s.time : ""} — ${o.s.city}`)).join(" · ")}${extra.length > 6 ? " …" : ""}</div>`

@@ -23,7 +23,7 @@ from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from . import tg
+from . import tg, tickchak
 from .extract import Extractor
 from .store import Store
 
@@ -129,6 +129,18 @@ async def run(dry_run: bool) -> None:
             if last_id > state.get(key, 0):
                 to_mark.append((channel, last_id))
 
+        # Сайт касс Tickchak LIVE: только события, которых ещё не видели.
+        tk_cfg = cfg.get("tickchak", {})
+        tk_seen = None
+        if tk_cfg.get("enabled"):
+            tk_posts, tk_seen = tickchak.fetch_new(
+                tk_cfg.get("pages", []), tk_cfg.get("artists", {}), state.get("tickchak_seen", {}), tz,
+            )
+            for batch in batches(tk_posts, tk_cfg.get("posts_per_request", 15)):
+                events = extractor.extract(batch, today)
+                added, merged = store.add(events, today)
+                log.info("  Tickchak: добавлено %d, склеено с известными %d", added, merged)
+
         removed = store.prune(today, cfg["events"]["keep_past_days"], cfg["events"]["horizon_days"])
         log.info("Удалено устаревших: %d. Всего событий: %d", removed, len(store.events))
 
@@ -148,6 +160,8 @@ async def run(dry_run: bool) -> None:
             return
         if sig:
             state["feedback_sig"] = sig
+        if tk_seen is not None:
+            state["tickchak_seen"] = tk_seen
         for channel, last_id in to_mark:
             state[str(channel.id)] = last_id
             if tcfg["mark_read"]:
