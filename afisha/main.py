@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import hashlib
 import json
 import logging
 import os
@@ -58,7 +59,22 @@ def load_feedback() -> dict:
         return data
     except Exception as err:  # noqa: BLE001
         log.warning("Не удалось получить оценки владельца: %s", err)
-        return {}
+        return {"unavailable": True}
+
+
+def feedback_signature(feedback: dict) -> str:
+    """Отпечаток набора 👍/👎: меняется, только когда владелец что-то оценил или снял оценку."""
+    items = sorted(f"{kind}:{x['id']}" for kind in ("likes", "dislikes") for x in feedback.get(kind, []))
+    return hashlib.sha1("|".join(items).encode()).hexdigest()
+
+
+def rescore_store(store: Store, extractor: Extractor, today) -> None:
+    events = store.upcoming(today)
+    scores: list[dict] = []
+    for i in range(0, len(events), RESCORE_BATCH):
+        scores += extractor.rescore(events[i : i + RESCORE_BATCH], today)
+    scored, merged = store.apply_scores(scores)
+    log.info("Пересчитано оценок: %d, склеено дублей: %d, осталось событий: %d", scored, merged, len(store.events))
 
 
 def batches(posts: list[tg.Post], size: int):
@@ -83,9 +99,10 @@ async def run(dry_run: bool) -> None:
     state = load_json(STATE_PATH, {})
     store = Store(EVENTS_PATH)
     store.renormalize()
+    feedback = load_feedback()
     extractor = Extractor(
         cfg["model"]["id"], cfg["model"]["effort"], cfg["profile"],
-        load_feedback(), store.upcoming(today),
+        feedback, store.upcoming(today),
     )
     tcfg = cfg["telegram"]
 
@@ -114,6 +131,14 @@ async def run(dry_run: bool) -> None:
 
         removed = store.prune(today, cfg["events"]["keep_past_days"], cfg["events"]["horizon_days"])
         log.info("Удалено устаревших: %d. Всего событий: %d", removed, len(store.events))
+
+        # Владелец поставил новые 👍/👎 — пересчитываем личные оценки всех будущих событий.
+        sig = None
+        if not feedback.get("unavailable"):
+            sig = feedback_signature(feedback)
+            if sig != state.get("feedback_sig"):
+                log.info("Есть новые оценки владельца — пересчитываю оценки будущих событий")
+                rescore_store(store, extractor, today)
         store.save(now.isoformat(timespec="minutes"), cfg["profile"])
 
         # Позицию чтения сохраняем и посты помечаем прочитанными только после
@@ -121,6 +146,8 @@ async def run(dry_run: bool) -> None:
         if dry_run:
             log.info("Пробный запуск: прочитанным не помечаю, позицию не сохраняю")
             return
+        if sig:
+            state["feedback_sig"] = sig
         for channel, last_id in to_mark:
             state[str(channel.id)] = last_id
             if tcfg["mark_read"]:
@@ -136,15 +163,10 @@ def rescore() -> None:
     now = datetime.now(tz)
     store = Store(EVENTS_PATH)
     store.renormalize()
-    events = store.upcoming(now.date())
     extractor = Extractor(
-        cfg["model"]["id"], cfg["model"]["effort"], cfg["profile"], load_feedback(), events,
+        cfg["model"]["id"], cfg["model"]["effort"], cfg["profile"], load_feedback(), store.upcoming(now.date()),
     )
-    scores: list[dict] = []
-    for i in range(0, len(events), RESCORE_BATCH):
-        scores += extractor.rescore(events[i : i + RESCORE_BATCH], now.date())
-    scored, merged = store.apply_scores(scores)
-    log.info("Пересчитано оценок: %d, склеено дублей: %d, осталось событий: %d", scored, merged, len(store.events))
+    rescore_store(store, extractor, now.date())
     store.save(now.isoformat(timespec="minutes"), cfg["profile"])
 
 
