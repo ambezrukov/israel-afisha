@@ -3,7 +3,12 @@ name: Ежедневный сбор афиши
 on:
   schedule:
     - cron: "0 4 * * *"   # 07:00 по Израилю летом, 06:00 зимой
-  workflow_dispatch: {}    # ручной запуск кнопкой в GitHub
+  workflow_dispatch:       # ручной запуск кнопкой в GitHub
+    inputs:
+      rescore:
+        description: "Только пересчитать оценки собранных событий (без чтения Telegram)"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -32,7 +37,7 @@ jobs:
           TG_API_HASH: ${{ secrets.TG_API_HASH }}
           TG_SESSION: ${{ secrets.TG_SESSION }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-        run: python -m afisha.main
+        run: python -m afisha.main ${{ inputs.rescore && '--rescore' || '' }}
 
       - name: Сохранить результат
         run: |

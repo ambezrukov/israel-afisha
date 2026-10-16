@@ -15,16 +15,23 @@ REGIONS = {
         "Кирьят-Ата", "Нешер", "Тират-Кармель", "Нагария", "Акко", "Кармиэль",
         "Цфат", "Тверия", "Назарет", "Нацрат-Илит", "Ноф-ха-Галиль", "Афула",
         "Йокнеам", "Зихрон-Яаков", "Кейсария", "Хадера", "Бинямина",
-        "Кирьят-Шмона", "Маалот", "Кибуц Кабри", "Шломи",
+        "Кирьят-Шмона", "Маалот", "Кибуц Кабри", "Шломи", "Тель-Хай",
+        "Пардес-Хана", "Ор-Акива", "Рош-Пина", "Метула", "Кацрин", "Бейт-Шеан",
+        "Кибуц Ягур", "Мегиддо", "Атлит", "Фрейдис", "Даллият-эль-Кармель", "Исфия",
     ],
     "Центр": [
         "Тель-Авив", "Яффо", "Рамат-Ган", "Гиватаим", "Бней-Брак", "Холон",
         "Бат-Ям", "Петах-Тиква", "Ришон-ле-Цион", "Реховот", "Нес-Циона",
         "Раанана", "Герцлия", "Кфар-Саба", "Ход-ха-Шарон", "Нетания",
         "Рош-ха-Аин", "Модиин", "Лод", "Рамла", "Явне", "Гедера", "Ор-Йегуда",
-        "Кирьят-Оно", "Рамат-ха-Шарон", "Кибуц Гиват-Бренер",
+        "Кирьят-Оно", "Рамат-ха-Шарон", "Кибуц Гиват-Бренер", "Ганей-Тиква",
+        "Кфар-Йона", "Оранит", "Гедерот", "Кибуц Наан", "Дром ха-Шарон",
+        "Эвен-Йегуда", "Кадима", "Шохам", "Ирус", "Кирьят-Экрон", "Мазкерет-Батья",
     ],
-    "Иерусалим": ["Иерусалим", "Бейт-Шемеш", "Мевасерет-Цион", "Маале-Адумим"],
+    "Иерусалим": [
+        "Иерусалим", "Бейт-Шемеш", "Мевасерет-Цион", "Маале-Адумим", "Бейт-Джамаль",
+        "Абу-Гош", "Цур-Хадасса",
+    ],
     "Юг": [
         "Ашдод", "Ашкелон", "Беэр-Шева", "Сдерот", "Нетивот", "Офаким",
         "Кирьят-Гат", "Димона", "Арад", "Эйлат", "Мицпе-Рамон",
@@ -49,6 +56,31 @@ CITY_ALIASES = {
     "петах тиква": "Петах-Тиква",
     "беер-шева": "Беэр-Шева",
     "беэр шева": "Беэр-Шева",
+    # Районы Хайфы
+    "кирьят-хаим": "Хайфа",
+    "кирьят хаим": "Хайфа",
+    "бат-галим": "Хайфа",
+    "адар": "Хайфа",
+    # Разные написания
+    "наария": "Нагария",
+    "нагария": "Нагария",
+    "кфар-сава": "Кфар-Саба",
+    "кфар сава": "Кфар-Саба",
+    "рамат ха-шарон": "Рамат-ха-Шарон",
+    "рамат а-шарон": "Рамат-ха-Шарон",
+    "гиват-бренер": "Кибуц Гиват-Бренер",
+    "кибуц гиват бренер": "Кибуц Гиват-Бренер",
+    "дром а-шарон": "Дром ха-Шарон",
+    "гдерот": "Гедерот",
+    "наан": "Кибуц Наан",
+    "кабри": "Кибуц Кабри",
+    "зихрон яаков": "Зихрон-Яаков",
+    "зихрон-яков": "Зихрон-Яаков",
+    "ганей тиква": "Ганей-Тиква",
+    "ход ха-шарон": "Ход-ха-Шарон",
+    "рош ха-аин": "Рош-ха-Аин",
+    "назарет-илит": "Ноф-ха-Галиль",
+    "нацрат-илит": "Ноф-ха-Галиль",
 }
 
 
@@ -121,11 +153,23 @@ def _clean(event: dict) -> dict | None:
             continue
         seen.add(key)
         sessions.append(s)
+    # Сеанс без времени лишний, если в тот же день и в том же городе есть сеанс со временем.
+    timed = {(s["date"], s["city"]) for s in sessions if s.get("time")}
+    sessions = [s for s in sessions if s.get("time") or (s["date"], s["city"]) not in timed]
     if not sessions or not event.get("title"):
         return None
     event["sessions"] = sorted(sessions, key=lambda s: (s["date"], s.get("time", "")))
-    event["interest"] = max(1, min(10, int(event.get("interest", 5))))
+    event["interest"] = _clamp(event.get("interest", 5))
+    event["personal"] = _clamp(event.get("personal", event["interest"]))
+    event["favorite_artist"] = event.get("favorite_artist", "") or ""
     return event
+
+
+def _clamp(value) -> int:
+    try:
+        return max(1, min(10, int(value)))
+    except (TypeError, ValueError):
+        return 5
 
 
 def _session_dates(event: dict) -> set[str]:
@@ -148,12 +192,25 @@ def _overlaps(a: dict, b: dict) -> bool:
 def _merge_into(target: dict, new: dict) -> None:
     urls = {s["url"] for s in target["sources"]}
     target["sources"].extend(s for s in new["sources"] if s["url"] not in urls)
-    keys = {(s["date"], s.get("time", ""), s["city"]) for s in target["sessions"]}
     for s in new["sessions"]:
-        if (s["date"], s.get("time", ""), s["city"]) not in keys:
+        # Тот же день и город: сеанс без времени считаем тем же самым и дополняем.
+        same = [
+            t for t in target["sessions"]
+            if t["date"] == s["date"] and t["city"] == s["city"]
+            and (t.get("time", "") == s.get("time", "") or not t.get("time") or not s.get("time"))
+        ]
+        if not same:
             target["sessions"].append(s)
+            continue
+        for t in same:
+            for field in ("time", "venue", "end_date"):
+                if not t.get(field) and s.get(field):
+                    t[field] = s[field]
     target["sessions"].sort(key=lambda s: (s["date"], s.get("time", "")))
     target["interest"] = max(target["interest"], new["interest"])
+    target["personal"] = max(target.get("personal", 0), new.get("personal", 0))
+    if not target.get("favorite_artist") and new.get("favorite_artist"):
+        target["favorite_artist"] = new["favorite_artist"]
     for field in ("ticket_url", "price_text"):
         if not target.get(field) and new.get(field):
             target[field] = new[field]
@@ -176,11 +233,15 @@ class Store:
     def add(self, new_events: list[dict], today: date) -> tuple[int, int]:
         """Добавляет события. Возвращает (новых, склеенных с уже известными)."""
         added = merged = 0
+        by_id = {e["id"]: e for e in self.events}
         for raw in new_events:
+            same_as = raw.pop("same_as", "")
             event = _clean(raw)
             if not event:
                 continue
-            match = next(
+            # Сначала доверяем модели (она видела список известных событий),
+            # затем — сравнению названий и дат.
+            match = by_id.get(same_as) or next(
                 (e for e in self.events if _similar(e["title"], event["title"]) and _overlaps(e, event)),
                 None,
             )
@@ -193,8 +254,50 @@ class Store:
                 event["first_seen"] = today.isoformat()
                 event["updated"] = today.isoformat()
                 self.events.append(event)
+                by_id[event["id"]] = event
                 added += 1
         return added, merged
+
+    def upcoming(self, today: date) -> list[dict]:
+        t = today.isoformat()
+        return [e for e in self.events if any((s.get("end_date") or s["date"]) >= t for s in e["sessions"])]
+
+    def renormalize(self) -> None:
+        """Повторно применяет справочник городов к уже сохранённым событиям."""
+        for e in self.events:
+            for s in e["sessions"]:
+                s["city"] = normalize_city(s["city"])
+                s["region"] = region_of(s["city"])
+            timed = {(s["date"], s["city"]) for s in e["sessions"] if s.get("time")}
+            e["sessions"] = [s for s in e["sessions"] if s.get("time") or (s["date"], s["city"]) not in timed]
+
+    def apply_scores(self, scores: list[dict]) -> tuple[int, int]:
+        """Применяет новые оценки; склеивает отмеченные дубли. Возвращает (оценено, склеено)."""
+        by_id = {e["id"]: e for e in self.events}
+        merged_into: dict[str, str] = {}
+        scored = 0
+        for sc in scores:
+            e = by_id.get(sc["id"])
+            if not e:
+                continue
+            e["interest"] = _clamp(sc["interest"])
+            e["interest_reason"] = sc["interest_reason"]
+            e["personal"] = _clamp(sc["personal"])
+            e["personal_reason"] = sc["personal_reason"]
+            e["favorite_artist"] = sc["favorite_artist"]
+            scored += 1
+        merged = 0
+        for sc in scores:
+            dup, target_id = sc["id"], sc.get("duplicate_of", "")
+            while target_id in merged_into:  # цель сама уже склеена с другим событием
+                target_id = merged_into[target_id]
+            if not target_id or target_id == dup or dup in merged_into or target_id not in by_id or dup not in by_id:
+                continue
+            _merge_into(by_id[target_id], by_id[dup])
+            merged_into[dup] = target_id
+            merged += 1
+        self.events = [e for e in self.events if e["id"] not in merged_into]
+        return scored, merged
 
     def prune(self, today: date, keep_past_days: int, horizon_days: int) -> int:
         """Удаляет прошедшие события и сеансы, а также слишком далёкие."""
@@ -212,8 +315,14 @@ class Store:
         self.events = kept
         return removed
 
-    def save(self, generated_at: str) -> None:
+    def save(self, generated_at: str, profile: dict | None = None) -> None:
         self.events.sort(key=lambda e: (e["sessions"][0]["date"], e["title"]))
-        payload = {"generated_at": generated_at, "count": len(self.events), "events": self.events}
+        payload = {"generated_at": generated_at, "count": len(self.events)}
+        if profile:
+            # Странице нужны только правила географии для «Моего топа».
+            payload["profile"] = {
+                k: profile[k] for k in ("home_region", "far_penalty", "far_penalty_if_major", "major_interest") if k in profile
+            }
+        payload["events"] = self.events
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.path.write_text(json.dumps(payload, ensure_ascii=False, indent=1), encoding="utf-8")

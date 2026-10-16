@@ -6,6 +6,7 @@
 
   python -m afisha.main              обычный запуск
   python -m afisha.main --dry-run    не помечать прочитанным и не сохранять позицию чтения
+  python -m afisha.main --rescore    только пересчитать оценки и склеить дубли среди собранного
 """
 
 from __future__ import annotations
@@ -27,6 +28,8 @@ from .store import Store
 ROOT = Path(__file__).resolve().parent.parent
 EVENTS_PATH = ROOT / "docs" / "data" / "events.json"
 STATE_PATH = ROOT / "state" / "state.json"
+FEEDBACK_PATH = ROOT / "state" / "feedback.json"
+RESCORE_BATCH = 40
 MAX_IMAGES_PER_REQUEST = 12
 
 log = logging.getLogger("afisha")
@@ -35,6 +38,10 @@ log = logging.getLogger("afisha")
 def load_config() -> dict:
     with open(ROOT / "config.toml", "rb") as f:
         return tomllib.load(f)
+
+
+def load_json(path: Path, default):
+    return json.loads(path.read_text(encoding="utf-8")) if path.exists() else default
 
 
 def batches(posts: list[tg.Post], size: int):
@@ -56,9 +63,13 @@ async def run(dry_run: bool) -> None:
     now = datetime.now(tz)
     today = now.date()
 
-    state = json.loads(STATE_PATH.read_text(encoding="utf-8")) if STATE_PATH.exists() else {}
+    state = load_json(STATE_PATH, {})
     store = Store(EVENTS_PATH)
-    extractor = Extractor(cfg["model"]["id"], cfg["model"]["effort"])
+    store.renormalize()
+    extractor = Extractor(
+        cfg["model"]["id"], cfg["model"]["effort"], cfg["profile"],
+        load_json(FEEDBACK_PATH, {}), store.upcoming(today),
+    )
     tcfg = cfg["telegram"]
 
     client = tg.make_client(int(os.environ["TG_API_ID"]), os.environ["TG_API_HASH"], os.environ["TG_SESSION"])
@@ -86,7 +97,7 @@ async def run(dry_run: bool) -> None:
 
         removed = store.prune(today, cfg["events"]["keep_past_days"], cfg["events"]["horizon_days"])
         log.info("Удалено устаревших: %d. Всего событий: %d", removed, len(store.events))
-        store.save(now.isoformat(timespec="minutes"))
+        store.save(now.isoformat(timespec="minutes"), cfg["profile"])
 
         # Позицию чтения сохраняем и посты помечаем прочитанными только после
         # успешного сохранения событий — иначе при сбое посты потерялись бы.
@@ -101,12 +112,38 @@ async def run(dry_run: bool) -> None:
         STATE_PATH.write_text(json.dumps(state, indent=1), encoding="utf-8")
 
 
+def rescore() -> None:
+    """Пересчёт оценок и поиск дублей среди уже собранных событий (без Telegram)."""
+    cfg = load_config()
+    tz = ZoneInfo(cfg["events"]["timezone"])
+    now = datetime.now(tz)
+    store = Store(EVENTS_PATH)
+    store.renormalize()
+    events = store.upcoming(now.date())
+    extractor = Extractor(
+        cfg["model"]["id"], cfg["model"]["effort"], cfg["profile"], load_json(FEEDBACK_PATH, {}), events,
+    )
+    scores: list[dict] = []
+    for i in range(0, len(events), RESCORE_BATCH):
+        scores += extractor.rescore(events[i : i + RESCORE_BATCH], now.date())
+    scored, merged = store.apply_scores(scores)
+    log.info("Пересчитано оценок: %d, склеено дублей: %d, осталось событий: %d", scored, merged, len(store.events))
+    store.save(now.isoformat(timespec="minutes"), cfg["profile"])
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--rescore", action="store_true")
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-    asyncio.run(run(args.dry_run))
+    # Логи HTTP-клиента не нужны: свои строки о токенах пишем сами.
+    logging.getLogger("httpx2").setLevel(logging.WARNING)
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    if args.rescore:
+        rescore()
+    else:
+        asyncio.run(run(args.dry_run))
 
 
 if __name__ == "__main__":
