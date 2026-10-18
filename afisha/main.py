@@ -25,7 +25,7 @@ from zoneinfo import ZoneInfo
 
 import copy
 
-from . import kinorai, notify, tg, tickchak, webpages
+from . import ethos, kinorai, notify, tg, tickchak, webpages
 from .extract import Extractor
 from .store import Store
 
@@ -192,6 +192,15 @@ async def run(dry_run: bool) -> None:
                 added, merged = store.add(events, today)
                 log.info("  Tickchak: добавлено %d, склеено с известными %d", added, merged)
 
+        # «Этос» — городская касса Хайфы: только события, которых ещё не видели.
+        et_cfg = cfg.get("ethos", {})
+        et_seen = None
+        if et_cfg.get("enabled"):
+            et_posts, et_seen = ethos.fetch_new(et_cfg.get("categories", {}), state.get("ethos_seen", []), today)
+            for batch in batches(et_posts, et_cfg.get("posts_per_request", 15)):
+                added, merged = store.add(extractor.extract(batch, today), today)
+                log.info("  Этос: добавлено %d, склеено с известными %d", added, merged)
+
         # Страницы касс театров и коллективов (Батшева и т. п.): модели — только изменившиеся.
         web_hashes = None
         if cfg.get("web_pages"):
@@ -274,6 +283,8 @@ async def run(dry_run: bool) -> None:
             state["tickchak_seen"] = tk_seen
         if web_hashes is not None:
             state["web_hashes"] = web_hashes
+        if et_seen is not None:
+            state["ethos_seen"] = et_seen
         for channel, last_id in to_mark:
             state[str(channel.id)] = last_id
             if tcfg["mark_read"]:
