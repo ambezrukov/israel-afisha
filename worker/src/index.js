@@ -17,6 +17,8 @@ export default {
     if (request.method === "OPTIONS") return cors(env, new Response(null, { status: 204 }));
     try {
       if (url.pathname === "/api/me" && request.method === "POST") return cors(env, await apiMe(request, env));
+      if (url.pathname === "/api/data" && request.method === "POST") return cors(env, await apiData(request, env));
+      if (url.pathname === "/api/data" && (request.method === "GET" || request.method === "PUT")) return await eventsStore(request, env);
       if (url.pathname === "/api/vote" && request.method === "POST") return cors(env, await apiVote(request, env));
       if (url.pathname === "/api/feedback" && request.method === "GET") return await apiFeedback(request, env);
       if (url.pathname === "/tg" && request.method === "POST") return await telegramWebhook(request, env);
@@ -100,6 +102,28 @@ async function apiVote(request, env) {
   return json({ ok: true });
 }
 
+// ---------- Данные афиши: только владельцу ----------
+// Страница получает события, только если открыта из Telegram владельца (подпись initData).
+async function apiData(request, env) {
+  const { isOwner } = await ownerFrom(request, env);
+  if (!isOwner) return json({ error: "forbidden" }, 403);
+  const [events, votes] = await Promise.all([env.FEEDBACK.get("events"), loadVotes(env)]);
+  const body = `{"votes":${JSON.stringify(Object.fromEntries(Object.entries(votes).map(([id, v]) => [id, v.vote])))},"data":${events || "{}"}}`;
+  return new Response(body, { headers: { "content-type": "application/json; charset=utf-8" } });
+}
+// Сбор кладёт (PUT) и забирает (GET) полный файл событий — с ключом READ_KEY.
+async function eventsStore(request, env) {
+  if (!bearerOk(request, env)) return json({ error: "forbidden" }, 403);
+  if (request.method === "PUT") {
+    const body = await request.text();
+    if (body.length > 20_000_000) return json({ error: "too large" }, 413);
+    JSON.parse(body);
+    await env.FEEDBACK.put("events", body);
+    return json({ ok: true, bytes: body.length });
+  }
+  return new Response((await env.FEEDBACK.get("events")) || "{}", { headers: { "content-type": "application/json; charset=utf-8" } });
+}
+
 // ---------- API для утреннего сбора ----------
 async function apiFeedback(request, env) {
   if (!bearerOk(request, env)) return json({ error: "forbidden" }, 403);
@@ -122,7 +146,7 @@ async function tg(env, method, payload) {
 
 async function eventTitle(env, id) {
   try {
-    const data = await (await fetch(`${env.SITE_URL}data/events.json`, { cf: { cacheTtl: 300 } })).json();
+    const data = JSON.parse((await env.FEEDBACK.get("events")) || "{}");
     return (data.events || []).find((e) => e.id === id)?.title || "";
   } catch { return ""; }
 }
@@ -157,14 +181,17 @@ async function telegramWebhook(request, env) {
     return new Response("ok");
   }
 
-  // Любое сообщение боту — ответ с кнопкой мини-аппа.
+  // Бот личный: владельцу — кнопка афиши, остальным — одна фраза, без кнопок.
   const msg = update.message;
   if (msg?.chat?.id) {
-    await tg(env, "sendMessage", {
-      chat_id: msg.chat.id,
-      text: "Афиша культурных событий Израиля — концерты, театр, лекции, выставки и экскурсии. Обновляется каждое утро.",
-      reply_markup: { inline_keyboard: [[{ text: "Открыть афишу", web_app: { url: env.SITE_URL } }]] },
-    });
+    const isOwner = String(msg.from?.id) === String(env.OWNER_ID);
+    await tg(env, "sendMessage", isOwner
+      ? {
+          chat_id: msg.chat.id,
+          text: "Афиша культурных событий Израиля. Обновляется каждый вечер около 20:00.",
+          reply_markup: { inline_keyboard: [[{ text: "Открыть афишу", web_app: { url: env.SITE_URL } }]] },
+        }
+      : { chat_id: msg.chat.id, text: "Это личный бот, он не принимает новых пользователей." });
   }
   return new Response("ok");
 }
@@ -192,7 +219,12 @@ async function setup(request, env, url) {
   results.webhook = await tg(env, "setWebhook", {
     url: `${url.origin}/tg`, secret_token: env.WEBHOOK_SECRET, allowed_updates: ["message", "callback_query"],
   });
-  results.menu = await tg(env, "setChatMenuButton", { menu_button: { type: "web_app", text: "Афиша", web_app: { url: env.SITE_URL } } });
-  results.description = await tg(env, "setMyShortDescription", { short_description: "Концерты, театр, лекции и выставки в Израиле — сводка из Telegram-каналов каждое утро." });
+  // Кнопка «Афиша» в меню — только в чате владельца; у всех остальных меню по умолчанию.
+  results.menuDefault = await tg(env, "setChatMenuButton", { menu_button: { type: "default" } });
+  results.menuOwner = await tg(env, "setChatMenuButton", {
+    chat_id: Number(env.OWNER_ID), menu_button: { type: "web_app", text: "Афиша", web_app: { url: env.SITE_URL } },
+  });
+  results.description = await tg(env, "setMyShortDescription", { short_description: "Личный бот." });
+  results.about = await tg(env, "setMyDescription", { description: "Личный бот-афиша. Новых пользователей не принимает." });
   return json(results);
 }

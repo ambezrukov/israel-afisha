@@ -403,24 +403,6 @@
       vote(b.closest("[data-vote-id]").dataset.voteId, b.dataset.vote);
     }, true);
   }
-  // Владелец ли открыл страницу: сервер проверяет подпись Telegram.
-  async function detectOwner() {
-    if (!tgApp || !tgApp.initData) return;
-    try {
-      const r = await fetch(API + "/api/me", {
-        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ initData: tgApp.initData }),
-      });
-      const data = await r.json();
-      if (data.owner) {
-        OWNER = true;
-        VOTES = data.votes || {};
-        if (!loadPrefs().topMode) prefs.topMode = "mine";
-        syncSeg();
-        render();
-      }
-    } catch { /* сервер недоступен — страница работает как для всех */ }
-  }
-
   function bind() {
     for (const id of ["place", "when", "dow", "lang", "price"]) {
       $(id).value = prefs[id];
@@ -452,21 +434,38 @@
   }
 
   // ---------- Старт ----------
-  fetch("data/events.json", { cache: "no-cache" })
-    .then((r) => r.json())
-    .then((data) => {
-      GENERATED = data.generated_at || "";
-      PROFILE = data.profile || {};
-      EVENTS = (data.events || []).filter((e) => e.sessions && e.sessions.some((s) => sessEnd(s) >= today));
-      const when = GENERATED ? new Date(GENERATED) : null;
-      $("meta").textContent = `Обновлено ${when ? when.toLocaleString("ru-RU", { timeZone: TZ, day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" }) : "—"} · событий впереди: ${EVENTS.length}`;
-      buildPlaceOptions();
-      buildCats();
-      buildMySettings();
-      bind();
-      bindTop();
-      render();
-      detectOwner();
+  // Афиша личная: данные отдаёт сервер, и только если страница открыта из Telegram владельца
+  // (сервер проверяет подпись Telegram). В обычном браузере данных нет.
+  function denied(text) {
+    $("meta").textContent = "";
+    document.querySelector("main").innerHTML =
+      `<div class="empty locked"><p><b>Личная афиша.</b></p><p>${esc(text)}</p></div>`;
+  }
+  function start(payload) {
+    const data = payload.data || {};
+    OWNER = true;
+    VOTES = payload.votes || {};
+    if (!loadPrefs().topMode) prefs.topMode = "mine";
+    GENERATED = data.generated_at || "";
+    PROFILE = data.profile || {};
+    EVENTS = (data.events || []).filter((e) => e.sessions && e.sessions.some((s) => sessEnd(s) >= today));
+    const when = GENERATED ? new Date(GENERATED) : null;
+    $("meta").textContent = `Обновлено ${when ? when.toLocaleString("ru-RU", { timeZone: TZ, day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" }) : "—"} · событий впереди: ${EVENTS.length}`;
+    buildPlaceOptions();
+    buildCats();
+    buildMySettings();
+    bind();
+    bindTop();
+    render();
+  }
+  if (!tgApp || !tgApp.initData) {
+    denied("Она открывается только из Telegram-бота владельца.");
+  } else {
+    fetch(API + "/api/data", {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ initData: tgApp.initData }),
     })
-    .catch(() => { $("meta").textContent = "Не удалось загрузить данные"; });
+      .then((r) => (r.status === 403 ? null : r.json()))
+      .then((payload) => (payload ? start(payload) : denied("Доступ только у владельца.")))
+      .catch(() => { $("meta").textContent = "Не удалось загрузить данные — проверьте интернет и откройте ещё раз."; });
+  }
 })();

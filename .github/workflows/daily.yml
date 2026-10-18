@@ -54,6 +54,6 @@ jobs:
         run: |
           git config user.name "afisha-bot"
           git config user.email "afisha-bot@users.noreply.github.com"
-          git add docs/data/events.json state/state.json
+          git add state/state.json
           git diff --cached --quiet || git commit -m "Афиша: обновление $(date -u +%F)"
           git push

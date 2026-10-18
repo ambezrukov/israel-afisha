@@ -30,7 +30,8 @@ from .extract import Extractor
 from .store import Store
 
 ROOT = Path(__file__).resolve().parent.parent
-EVENTS_PATH = ROOT / "docs" / "data" / "events.json"
+# События хранятся на сервере оценок (видны только владельцу); здесь — рабочая копия на время запуска.
+EVENTS_PATH = ROOT / "data_private" / "events.json"
 STATE_PATH = ROOT / "state" / "state.json"
 FEEDBACK_PATH = ROOT / "state" / "feedback.json"
 RESCORE_BATCH = 40
@@ -62,6 +63,37 @@ def load_feedback() -> dict:
     except Exception as err:  # noqa: BLE001
         log.warning("Не удалось получить оценки владельца: %s", err)
         return {"unavailable": True}
+
+
+def _server(path: str) -> tuple[str, str] | None:
+    url, key = os.environ.get("FEEDBACK_URL"), os.environ.get("FEEDBACK_KEY")
+    return (url.replace("/api/feedback", path), key) if url and key else None
+
+
+def pull_events() -> None:
+    """Забирает файл событий с сервера в рабочую копию. Без сервера (локально) — работаем с файлом как есть."""
+    target = _server("/api/data")
+    if not target:
+        return
+    req = urllib.request.Request(target[0], headers={"authorization": f"Bearer {target[1]}", "user-agent": "israel-afisha"})
+    with urllib.request.urlopen(req, timeout=60) as r:
+        body = r.read()
+    EVENTS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    EVENTS_PATH.write_bytes(body)
+    log.info("События с сервера: %d", json.loads(body).get("count", 0))
+
+
+def push_events() -> None:
+    """Кладёт обновлённый файл событий на сервер."""
+    target = _server("/api/data")
+    if not target:
+        return
+    req = urllib.request.Request(
+        target[0], data=EVENTS_PATH.read_bytes(), method="PUT",
+        headers={"authorization": f"Bearer {target[1]}", "content-type": "application/json", "user-agent": "israel-afisha"},
+    )
+    with urllib.request.urlopen(req, timeout=60) as r:
+        log.info("События сохранены на сервере: %s", r.read().decode("utf-8"))
 
 
 def feedback_signature(feedback: dict) -> str:
@@ -115,6 +147,7 @@ async def run(dry_run: bool) -> None:
     state = load_json(STATE_PATH, {})
     if not scheduled_run_needed(cfg, state):
         return
+    pull_events()
     store = Store(EVENTS_PATH)
     store.renormalize()
     feedback = load_feedback()
@@ -203,6 +236,7 @@ async def run(dry_run: bool) -> None:
                 log.info("Есть новые оценки владельца — пересчитываю оценки будущих событий")
                 rescore_store(store, extractor, today)
         store.save(now.isoformat(timespec="minutes"), cfg["profile"])
+        push_events()
 
         # Позицию чтения сохраняем и посты помечаем прочитанными только после
         # успешного сохранения событий — иначе при сбое посты потерялись бы.
@@ -243,6 +277,7 @@ def rescore() -> None:
     cfg = load_config()
     tz = ZoneInfo(cfg["events"]["timezone"])
     now = datetime.now(tz)
+    pull_events()
     store = Store(EVENTS_PATH)
     store.renormalize()
     extractor = Extractor(
@@ -250,6 +285,7 @@ def rescore() -> None:
     )
     rescore_store(store, extractor, now.date())
     store.save(now.isoformat(timespec="minutes"), cfg["profile"])
+    push_events()
 
 
 def main() -> None:

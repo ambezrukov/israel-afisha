@@ -180,3 +180,6 @@ section { margin: 28px 0; }
   .filters { position: static; }
   .row { grid-template-columns: 1fr 1fr; }
 }
+
+.locked { padding: 80px 16px; }
+.locked p { margin: 6px 0; }
