@@ -278,7 +278,7 @@ async def run(dry_run: bool) -> None:
             built = notify.build(store.upcoming(today), feedback, cfg["profile"], today, ncfg)
             if built:
                 try:
-                    notify.send_all(bot_token, ncfg["chat_id"], built)
+                    notify.send_all(bot_token, ncfg["chat_id"], built, ncfg.get("max_messages", 40))
                     log.info("Вечернее сообщение отправлено")
                 except Exception as err:  # noqa: BLE001 — сбой отправки не должен терять собранное
                     log.warning("Не удалось отправить вечернее сообщение: %s", err)

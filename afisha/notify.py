@@ -12,6 +12,7 @@ from __future__ import annotations
 import html
 import json
 import logging
+import time
 import urllib.request
 from datetime import date, timedelta
 
@@ -88,7 +89,9 @@ def build(events: list[dict], feedback: dict, profile: dict, today: date, cfg: d
             fresh.append((e, s, _score(e, s, profile)))
     favs = [x for x in fresh if x[0].get("favorite_artist")]
     others = sorted((x for x in fresh if not x[0].get("favorite_artist") and x[2] >= min_score),
-                    key=lambda x: (-x[2], x[1]["date"]))[: cfg.get("new_count", 5)]
+                    key=lambda x: (-x[2], x[1]["date"]))
+    if cfg.get("new_count", 5) > 0:  # 0 — присылать все новые
+        others = others[: cfg["new_count"]]
 
     # По четвергам — топ на ближайшие пятницу и субботу.
     weekend = []
@@ -135,9 +138,14 @@ def build(events: list[dict], feedback: dict, profile: dict, today: date, cfg: d
     return messages
 
 
-def send_all(bot_token: str, chat_id: int | str, messages: list[tuple[str, list, bool]]) -> None:
-    for text, buttons, silent in messages:
+def send_all(bot_token: str, chat_id: int | str, messages: list[tuple[str, list, bool]], limit: int = 40) -> None:
+    # Telegram просит не слать в один чат чаще раза в секунду; предел — страховка от лавины.
+    for n, (text, buttons, silent) in enumerate(messages[: limit + 1]):
+        if n:
+            time.sleep(1.1)
         send(bot_token, chat_id, text, buttons, silent)
+    if len(messages) > limit + 1:
+        log.warning("Вечернее сообщение: отправлено %d из %d, остальное — в афише", limit, len(messages) - 1)
 
 
 def send(bot_token: str, chat_id: int | str, text: str, buttons: list, silent: bool = False) -> None:
