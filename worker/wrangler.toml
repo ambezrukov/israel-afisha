@@ -11,3 +11,12 @@ ALLOWED_ORIGIN = "https://ambezrukov.github.io"
 [[kv_namespaces]]
 binding = "FEEDBACK"
 id = "38046f1f43ef4d39acae29287c636a9c"
+
+# Посредник для kinorai.co.il больше не нужен: класс удалён (миграция v2)
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Relay"]
+
+[[migrations]]
+tag = "v2"
+deleted_classes = ["Relay"]

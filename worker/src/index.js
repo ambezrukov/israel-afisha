@@ -21,7 +21,7 @@ export default {
       if (url.pathname === "/api/feedback" && request.method === "GET") return await apiFeedback(request, env);
       if (url.pathname === "/tg" && request.method === "POST") return await telegramWebhook(request, env);
       if (url.pathname === "/setup" && request.method === "GET") return await setup(request, env, url);
-      if (url.pathname === "/fetch" && request.method === "GET") return await relay(request, env, url);
+      if (url.pathname === "/kinorai" && (request.method === "GET" || request.method === "PUT")) return await kinoraiSnapshot(request, env);
       return new Response("Not found", { status: 404 });
     } catch (err) {
       return cors(env, json({ error: String(err) }, 500));
@@ -169,21 +169,20 @@ async function telegramWebhook(request, env) {
   return new Response("ok");
 }
 
-// Посредник для утреннего сбора: сайт «Кинорая» не пускает облачные серверы GitHub.
-// Только для владельца ключа и только для страниц kinorai.co.il.
-async function relay(request, env, url) {
+// Снимок расписания «Кинорая». Сайт отвечает 403 на запросы из США (оттуда работают и GitHub,
+// и Cloudflare), поэтому снимок делает задача на компьютере владельца в Израиле (PUT),
+// а утренний сбор забирает его (GET). Оба запроса — с ключом READ_KEY.
+async function kinoraiSnapshot(request, env) {
   if (!bearerOk(request, env)) return json({ error: "forbidden" }, 403);
-  let target;
-  try { target = new URL(url.searchParams.get("url") || ""); } catch { return json({ error: "bad url" }, 400); }
-  if (target.protocol !== "https:" || target.hostname !== "kinorai.co.il") return json({ error: "host not allowed" }, 400);
-  const r = await fetch(target.toString(), {
-    headers: {
-      "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0 Safari/537.36",
-      "accept": "text/html,application/xhtml+xml",
-      "accept-language": "ru,he;q=0.8,en;q=0.6",
-    },
-  });
-  return new Response(await r.text(), { status: r.status, headers: { "content-type": "text/html; charset=utf-8" } });
+  if (request.method === "PUT") {
+    const body = await request.text();
+    if (body.length > 5_000_000) return json({ error: "too large" }, 413);
+    JSON.parse(body); // принимаем только корректный JSON
+    await env.FEEDBACK.put("kinorai", body);
+    return json({ ok: true, bytes: body.length });
+  }
+  const data = await env.FEEDBACK.get("kinorai");
+  return new Response(data || "{}", { headers: { "content-type": "application/json; charset=utf-8" } });
 }
 
 // Однократная настройка бота: вебхук, кнопка меню и описание.

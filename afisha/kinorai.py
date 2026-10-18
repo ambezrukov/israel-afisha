@@ -1,21 +1,26 @@
 """Кино на русском от «Кинорая» (kinorai.co.il): только сеансы в Хайфе и любые IMAX.
 
-Страница «Все показы фильмов» содержит таблицы по кинотеатрам: фильм, дата и
-время, ссылка на покупку. Для нового фильма модель один раз пишет карточку
-(описание, жанр, оценки) по странице фильма; для уже известного программа
-только добавляет новые сеансы — оценки при этом не трогаются.
+Сайт отвечает 403 на запросы из США, а оттуда работают и GitHub, и Cloudflare.
+Поэтому расписание снимает задача на компьютере владельца в Израиле
+(scripts/kinorai_upload.py → make_snapshot) и кладёт снимок на сервер оценок,
+а утренний сбор забирает его (load_snapshot).
+
+Для нового фильма модель один раз пишет карточку (описание, жанр, оценки) по
+тексту страницы фильма; для уже известного программа только добавляет новые
+сеансы — оценки при этом не трогаются.
 """
 
 from __future__ import annotations
 
 import html
-import os
+import json
 import logging
+import os
 import re
 import urllib.parse
 import urllib.request
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timezone
 
 from .tg import Post
 
@@ -32,14 +37,7 @@ ROW = re.compile(
 
 
 def _get(url: str) -> str:
-    # Сайт за защитой Cloudflare не пускает облачные серверы GitHub, поэтому в облаке
-    # ходим через свой сервер оценок (адрес — из FEEDBACK_URL, ключ — FEEDBACK_KEY).
-    feedback_url, key = os.environ.get("FEEDBACK_URL"), os.environ.get("FEEDBACK_KEY")
-    if feedback_url and key:
-        relay = feedback_url.replace("/api/feedback", "/fetch") + "?url=" + urllib.parse.quote(url, safe="")
-        req = urllib.request.Request(relay, headers={"authorization": f"Bearer {key}", "user-agent": "israel-afisha"})
-    else:
-        req = urllib.request.Request(url, headers={"user-agent": "Mozilla/5.0 (israel-afisha; personal digest)"})
+    req = urllib.request.Request(url, headers={"user-agent": "Mozilla/5.0 (israel-afisha; personal digest)"})
     with urllib.request.urlopen(req, timeout=30) as r:
         return r.read().decode("utf-8", "replace")
 
@@ -65,7 +63,7 @@ def schedule(cities: list[str]) -> dict[str, dict]:
         if not m:
             continue
         theater = html.unescape(re.sub(r"<[^>]+>", "", m.group(1))).strip()
-        # «Хот Синема - Хайфа» → кинотеатр и город
+        # «Хот Синема - Хайфа» → город «Хайфа»
         city = theater.rsplit(" - ", 1)[-1].strip() if " - " in theater else ""
         for url, title, when, buy in ROW.findall(table):
             title = html.unescape(title).strip()
@@ -86,21 +84,48 @@ def schedule(cities: list[str]) -> dict[str, dict]:
     return dict(films)
 
 
-def film_post(url: str, film: dict) -> Post:
-    """Пост для модели о новом фильме: текст страницы фильма и сеансы."""
+def _about(url: str) -> str:
+    """Описание фильма со страницы: жанр, страна, режиссёр, актёры, сюжет."""
     try:
         text = _text(_get(url))
-        start = text.find("Продолжительность")
-        about = text[start : start + 2500] if start >= 0 else text[:2500]
     except Exception as err:  # noqa: BLE001
         log.warning("КиноРай: не удалось открыть страницу фильма %s (%s)", url, err)
-        about = ""
+        return ""
+    start = text.find("Продолжительность")
+    return text[start : start + 2500] if start >= 0 else text[:2500]
+
+
+def make_snapshot(cities: list[str]) -> dict:
+    """Снимок для облачного сбора: сеансы и описания фильмов (делается на компьютере в Израиле)."""
+    films = schedule(cities)
+    return {
+        "fetched_at": datetime.now(timezone.utc).isoformat(timespec="minutes"),
+        "films": films,
+        "about": {url: _about(url) for url in films},
+    }
+
+
+def load_snapshot() -> dict:
+    """Последний снимок с сервера оценок (адрес из FEEDBACK_URL, ключ FEEDBACK_KEY)."""
+    feedback_url, key = os.environ.get("FEEDBACK_URL"), os.environ.get("FEEDBACK_KEY")
+    if not feedback_url or not key:
+        raise RuntimeError("нет FEEDBACK_URL/FEEDBACK_KEY")
+    req = urllib.request.Request(
+        feedback_url.replace("/api/feedback", "/kinorai"),
+        headers={"authorization": f"Bearer {key}", "user-agent": "israel-afisha"},
+    )
+    with urllib.request.urlopen(req, timeout=30) as r:
+        return json.loads(r.read().decode("utf-8"))
+
+
+def film_post(url: str, film: dict, about: str) -> Post:
+    """Пост для модели о новом фильме: описание со страницы фильма и сеансы."""
     sessions = "\n".join(f"- {s['date']} {s['time']}, {s['venue']}" for s in film["sessions"])
     body = (
         "Фильм в прокате на русском языке (русский дубляж или русский оригинал), прокатчик КиноРай.\n"
         f"Название: {film['title']}\n{about}\n\nСеансы (только эти, другие города не указывать):\n{sessions}\n"
         f"Билеты: {film['buy'] or url}\n"
-        "Это одно событие категории «кино»: city — Хайфа, venue — кинотеатр."
+        "Это одно событие категории «кино»: city — город кинотеатра, venue — кинотеатр."
     )
     return Post(
         channel_id=0, channel_title=CHANNEL_TITLE, channel_username="",

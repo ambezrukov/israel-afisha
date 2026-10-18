@@ -143,17 +143,25 @@ async def run(dry_run: bool) -> None:
                 added, merged = store.add(events, today)
                 log.info("  Tickchak: добавлено %d, склеено с известными %d", added, merged)
 
-        # Кино на русском от «Кинорая»: новые фильмы — через модель, у известных — только новые сеансы.
+        # Кино на русском от «Кинорая». Расписание снимает задача на компьютере владельца
+        # (сайт не пускает облако); здесь берём снимок с сервера. Новые фильмы — через модель,
+        # у известных — только новые сеансы, оценки не трогаем.
         kcfg = cfg.get("kinorai", {})
         if kcfg.get("enabled"):
+            snap = {}
             try:
-                films = kinorai.schedule(kcfg.get("cities", ["Хайфа"]))
-            except Exception as err:  # noqa: BLE001 — сбой сайта не должен ронять весь сбор
-                log.warning("КиноРай: не удалось прочитать расписание (%s)", err)
-                films = {}
+                snap = kinorai.load_snapshot()
+            except Exception as err:  # noqa: BLE001 — сбой не должен ронять весь сбор
+                log.warning("КиноРай: не удалось получить снимок расписания (%s)", err)
+            fetched = snap.get("fetched_at", "")
+            if fetched:
+                age = (datetime.now(tz) - datetime.fromisoformat(fetched)).days
+                log.info("КиноРай: снимок от %s (%d дн. назад), фильмов %d", fetched, age, len(snap.get("films", {})))
+                if age > kcfg.get("max_snapshot_age_days", 8):
+                    log.warning("КиноРай: снимок устарел — компьютер давно не включался")
             by_url = {s["url"]: e for e in store.events for s in e["sources"]}
             new_posts = []
-            for url, film in films.items():
+            for url, film in snap.get("films", {}).items():
                 known = by_url.get(url)
                 if known:
                     update = copy.deepcopy(known)
@@ -163,7 +171,7 @@ async def run(dry_run: bool) -> None:
                     update["same_as"] = known["id"]
                     store.add([update], today)
                 else:
-                    new_posts.append(kinorai.film_post(url, film))
+                    new_posts.append(kinorai.film_post(url, film, snap.get("about", {}).get(url, "")))
             for batch in batches(new_posts, 3):
                 added, merged = store.add(extractor.extract(batch, today), today)
                 log.info("  КиноРай: новых фильмов %d, склеено с известными %d", added, merged)
