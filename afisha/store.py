@@ -92,6 +92,14 @@ CITY_ALIASES = {
 }
 
 
+def is_excluded(event: dict, rules: list[dict]) -> bool:
+    """Подходит ли событие под правило «не показывать» из профиля."""
+    for rule in rules or []:
+        if all(not rule.get(k) or event.get(k) == rule[k] for k in ("category", "language")):
+            return True
+    return False
+
+
 def normalize_city(city: str) -> str:
     city = city.strip()
     return CITY_ALIASES.get(city.lower(), city) or "Неизвестно"
@@ -327,9 +335,10 @@ class Store:
         self.events.sort(key=lambda e: (e["sessions"][0]["date"], e["title"]))
         payload = {"generated_at": generated_at, "count": len(self.events)}
         if profile:
-            # Странице нужны только правила географии для «Моего топа».
+            # Странице нужны только правила географии для «Моего топа» и исключения.
             payload["profile"] = {
-                k: profile[k] for k in ("home_region", "far_penalty", "far_penalty_if_major", "major_interest") if k in profile
+                k: profile[k] for k in ("home_region", "far_penalty", "far_penalty_if_major", "major_interest", "exclude")
+                if k in profile
             }
         payload["events"] = self.events
         self.path.parent.mkdir(parents=True, exist_ok=True)

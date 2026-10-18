@@ -15,6 +15,8 @@ import logging
 import urllib.request
 from datetime import date, timedelta
 
+from .store import is_excluded
+
 log = logging.getLogger(__name__)
 
 MONTHS = ["января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа",
@@ -70,6 +72,8 @@ def build(events: list[dict], feedback: dict, profile: dict, today: date, cfg: d
     """Сообщения (текст, кнопки, беззвучно): заголовок и по одному на событие; None — если отправлять нечего."""
     t = today.isoformat()
     voted = {x["id"] for kind in ("likes", "dislikes", "hidden") for x in feedback.get(kind, [])}
+    # Исключённое правилами профиля («стендап на иврите» и т. п.) не присылаем никогда.
+    events = [e for e in events if not is_excluded(e, profile.get("exclude", []))]
     horizon = (today + timedelta(days=cfg.get("new_horizon_days", 120))).isoformat()
     home = profile.get("home_region", "")
     min_score = cfg.get("min_score", 5)

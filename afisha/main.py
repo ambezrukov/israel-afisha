@@ -25,7 +25,7 @@ from zoneinfo import ZoneInfo
 
 import copy
 
-from . import kinorai, notify, tg, tickchak
+from . import kinorai, notify, tg, tickchak, webpages
 from .extract import Extractor
 from .store import Store
 
@@ -192,6 +192,14 @@ async def run(dry_run: bool) -> None:
                 added, merged = store.add(events, today)
                 log.info("  Tickchak: добавлено %d, склеено с известными %d", added, merged)
 
+        # Страницы касс театров и коллективов (Батшева и т. п.): модели — только изменившиеся.
+        web_hashes = None
+        if cfg.get("web_pages"):
+            web_posts, web_hashes = webpages.fetch_changed(cfg["web_pages"], state.get("web_hashes", {}))
+            for batch in batches(web_posts, 1):
+                added, merged = store.add(extractor.extract(batch, today), today)
+                log.info("  %s: добавлено %d, склеено с известными %d", batch[0].channel_title, added, merged)
+
         # Кино на русском от «Кинорая». Расписание снимает задача на компьютере владельца
         # (сайт не пускает облако); здесь берём снимок с сервера. Новые фильмы — через модель,
         # у известных — только новые сеансы, оценки не трогаем.
@@ -264,6 +272,8 @@ async def run(dry_run: bool) -> None:
             state["feedback_sig"] = sig
         if tk_seen is not None:
             state["tickchak_seen"] = tk_seen
+        if web_hashes is not None:
+            state["web_hashes"] = web_hashes
         for channel, last_id in to_mark:
             state[str(channel.id)] = last_id
             if tcfg["mark_read"]:

@@ -124,7 +124,13 @@
     return null;
   }
 
+  // Правила профиля «не показывать вовсе» (например, стендап на иврите).
+  function excluded(e) {
+    return (PROFILE.exclude || []).some((r) => (!r.category || e.category === r.category) && (!r.language || e.language === r.language));
+  }
+
   function eventMatches(e) {
+    if (excluded(e)) return false;
     if (prefs.cats.length && !prefs.cats.includes(e.category)) return false;
     if (prefs.lang !== "all") {
       if (prefs.lang === "none" ? e.language !== "none" : !(e.language === prefs.lang || e.language === "mixed")) return false;
