@@ -2,8 +2,6 @@
   "use strict";
 
   const TZ = "Asia/Jerusalem";
-  const TOP_SIZE = 10;
-  const TOP_WINDOW_DAYS = 30;
   const STORE_KEY = "afisha-filters-v1";
   const VOTES_KEY = "afisha-votes-v1";
   const API = "https://israel-afisha.ambezrukov.workers.dev";
@@ -79,7 +77,7 @@
   const today = isoToday();
   const prefs = Object.assign(
     { q: "", place: "all", when: "all", dow: "all", lang: "all", price: "all", cats: [], kids: false, oneoff: false, fresh: false,
-      topMode: "all", myRegion: "all", myCats: [], myLang: "all", myKids: false },
+      topMode: "all", sort: "score", myRegion: "all", myCats: [], myLang: "all", myKids: false },
     loadPrefs()
   );
   try { VOTES = JSON.parse(localStorage.getItem(VOTES_KEY)) || {}; } catch { VOTES = {}; }
@@ -188,7 +186,7 @@
     return "https://calendar.google.com/calendar/render?" + p.toString();
   }
 
-  function card(e, m, extra) {
+  function card(e, m, extra, fav) {
     const { s, day } = m;
     const tags = [
       `<span class="tag cat">${CAT_ICON[e.category] || ""} ${esc(e.category)}</span>`,
@@ -208,6 +206,7 @@
       ? `<div class="more">Ещё: ${extra.slice(0, 6).map((o) => esc(`${human(o.day, false)}${o.s.time ? " " + o.s.time : ""} — ${o.s.city}`)).join(" · ")}${extra.length > 6 ? " …" : ""}</div>`
       : "";
     return `<article class="card" id="ev-${esc(e.id)}">
+      ${fav ? `<span class="fav">🔔 ${esc(e.favorite_artist)}</span>` : ""}
       <h3>${esc(e.title)}</h3>
       <div class="where">${esc(whenText(s, day))} · ${esc([s.city, s.venue].filter(Boolean).join(", "))}</div>
       <p class="summary">${esc(e.summary)}</p>
@@ -226,9 +225,9 @@
   function voteButtons(e) {
     const v = VOTES[e.id];
     return `<span class="votes" data-vote-id="${esc(e.id)}">
-      <button type="button" class="vote" data-vote="up" aria-pressed="${v === "up"}" title="Интересно — закрепить в моём топе">👍</button>
-      <button type="button" class="vote" data-vote="hide" aria-pressed="${v === "hide"}" title="Скрыть из моего топа (не подходит дата, место, настроение)">✕</button>
-      <button type="button" class="vote" data-vote="down" aria-pressed="${v === "down"}" title="Не моё — такое показывать реже">👎</button></span>`;
+      <button type="button" class="vote" data-vote="up" aria-pressed="${v === "up"}" title="Показывать такое чаще">👍 Интересно</button>
+      <button type="button" class="vote" data-vote="hide" aria-pressed="${v === "hide"}" title="Убрать это событие, вкус не менять: не подходит дата, место, настроение">🙈 Не сейчас</button>
+      <button type="button" class="vote" data-vote="down" aria-pressed="${v === "down"}" title="Убрать и показывать такое реже">👎 Не моё</button></span>`;
   }
   function vote(id, v) {
     const next = VOTES[id] === v ? "none" : v;
@@ -251,7 +250,7 @@
       || prefs.price !== "all" || prefs.cats.length || prefs.kids || prefs.oneoff || prefs.fresh);
   }
 
-  // ---------- Топ ----------
+  // ---------- Рейтинг ----------
   function myScore(e, m) {
     let score, home;
     if (OWNER) {
@@ -271,55 +270,47 @@
     if (OWNER && e.favorite_artist) score += 100;
     return score;
   }
-  function renderTop() {
-    // Топ подчиняется тем же фильтрам, что и список; без выбранных дат — ближайшие 30 дней.
-    const [from, rangeTo] = dateRange();
-    const to = prefs.when === "all" ? addDays(today, TOP_WINDOW_DAYS - 1) : rangeTo;
-    const mine = prefs.topMode === "mine";
-    const home = mine ? (OWNER ? PROFILE.home_region : prefs.myRegion) : null;
-    const items = [];
-    for (const e of EVENTS) {
-      if (mine && (VOTES[e.id] === "down" || VOTES[e.id] === "hide")) continue;
-      if (!eventMatches(e)) continue;
-      // Анонсы любимых артистов в «Моём топе» видны и дальше, чем на 30 дней вперёд.
-      const far = mine && OWNER && e.favorite_artist && prefs.when === "all";
-      const ms = matchedSessions(e, from, far ? "9999-12-31" : to);
-      if (!ms.length) continue;
-      const m = (home && home !== "all" && ms.find((x) => x.s.region === home)) || ms[0];
-      items.push({ e, m, score: mine ? myScore(e, m) : e.interest });
-    }
-    items.sort((a, b) => b.score - a.score || a.m.day.localeCompare(b.m.day));
-    const top = items.slice(0, TOP_SIZE);
-    const ups = Object.values(VOTES).filter((v) => v === "up").length;
-    const downs = Object.values(VOTES).filter((v) => v === "down").length;
-    const hides = Object.values(VOTES).filter((v) => v === "hide").length;
-    const filtered = filtersActive() ? " · с учётом фильтров" : "";
-    $("top-hint").textContent = (mine
-      ? (OWNER ? `под ваш профиль · 👍 ${ups} · ✕ ${hides} · 👎 ${downs}` : "по вашим настройкам")
-      : "общий рейтинг значимости") + filtered;
-    $("my-settings").hidden = !(mine && !OWNER);
-    $("top").innerHTML = top.length
-      ? top.map(({ e, m }) => `<li>${mine && OWNER && e.favorite_artist ? `<span class="fav">🔔 ${esc(e.favorite_artist)}</span>` : ""}
-          <button type="button" class="link" data-id="${esc(e.id)}">
-          <div class="t">${CAT_ICON[e.category] || ""} ${esc(e.title)}</div>
-          <div class="w">${esc(whenText(m.s, m.day))} · ${esc(m.s.city)}</div></button>
-          ${voteButtons(e)}</li>`).join("")
-      : `<li class="empty" style="padding-left:14px">Пока нет событий</li>`;
+  // Поправка на близость: ближайшие две недели чуть выше, далёкие месяцы — чуть ниже.
+  function proximity(day) {
+    const days = Math.round((new Date(day + "T12:00:00Z") - new Date(today + "T12:00:00Z")) / 864e5);
+    if (days <= 14) return 1;
+    if (days <= 45) return 0;
+    if (days <= 120) return -1;
+    return -2;
   }
 
   function renderList() {
     const [from, to] = dateRange();
+    const mine = prefs.topMode === "mine";
+    const byDate = prefs.sort === "date";
+    const home = mine ? (OWNER ? PROFILE.home_region : prefs.myRegion) : null;
     const rows = [];
     for (const e of EVENTS) {
+      if (mine && (VOTES[e.id] === "down" || VOTES[e.id] === "hide")) continue;
       if (!eventMatches(e)) continue;
       const ms = matchedSessions(e, from, to);
-      if (ms.length) rows.push({ e, m: ms[0], extra: ms.slice(1) });
+      if (!ms.length) continue;
+      const m = (!byDate && home && home !== "all" && ms.find((x) => x.s.region === home)) || ms[0];
+      const score = (mine ? myScore(e, m) : e.interest) + proximity(m.day);
+      rows.push({ e, m, extra: ms.filter((x) => x !== m), score });
     }
-    rows.sort((a, b) => {
-      // Выставки и прочие «длящиеся» события — в конце своего дня.
-      const pa = isPeriod(a.m.s) ? 1 : 0, pb = isPeriod(b.m.s) ? 1 : 0;
-      return a.m.day.localeCompare(b.m.day) || pa - pb || (a.m.s.time || "99").localeCompare(b.m.s.time || "99") || b.e.interest - a.e.interest;
-    });
+    if (byDate) {
+      rows.sort((a, b) => {
+        // Выставки и прочие «длящиеся» события — в конце своего дня.
+        const pa = isPeriod(a.m.s) ? 1 : 0, pb = isPeriod(b.m.s) ? 1 : 0;
+        return a.m.day.localeCompare(b.m.day) || pa - pb || (a.m.s.time || "99").localeCompare(b.m.s.time || "99") || b.score - a.score;
+      });
+    } else {
+      rows.sort((a, b) => b.score - a.score || a.m.day.localeCompare(b.m.day));
+    }
+
+    const counts = (v) => Object.values(VOTES).filter((x) => x === v).length;
+    $("top-hint").textContent = (mine
+      ? (OWNER ? `Мой рейтинг: по вашему профилю и оценкам (👍 ${counts("up")} · 🙈 ${counts("hide")} · 👎 ${counts("down")})` : "Мой рейтинг: по вашим настройкам")
+      : "Общий рейтинг: по значимости события")
+      + (byDate ? " · по дате" : " · ближайшие события чуть выше далёких")
+      + (filtersActive() ? " · с учётом фильтров" : "");
+    $("my-settings").hidden = !(mine && !OWNER);
     $("count").textContent = `${rows.length} из ${EVENTS.length}`;
     if (!rows.length) {
       $("list").innerHTML = `<div class="empty">Ничего не нашлось — попробуйте ослабить фильтры.</div>`;
@@ -327,15 +318,14 @@
     }
     let html = "", cur = "";
     for (const r of rows) {
-      if (r.m.day !== cur) { cur = r.m.day; html += `<div class="day">${esc(dayLabel(cur, today))}</div>`; }
-      html += card(r.e, r.m, r.extra);
+      if (byDate && r.m.day !== cur) { cur = r.m.day; html += `<div class="day">${esc(dayLabel(cur, today))}</div>`; }
+      html += card(r.e, r.m, r.extra, mine && OWNER && r.e.favorite_artist);
     }
     $("list").innerHTML = html;
   }
 
   function render() {
     savePrefs(prefs);
-    renderTop();
     renderList();
   }
 
@@ -383,12 +373,16 @@
     ).join("");
   }
   function syncSeg() {
-    for (const x of document.querySelectorAll(".seg button")) x.setAttribute("aria-pressed", x.dataset.mode === prefs.topMode);
+    for (const x of document.querySelectorAll(".seg button[data-mode]")) x.setAttribute("aria-pressed", x.dataset.mode === prefs.topMode);
+    for (const x of document.querySelectorAll(".seg button[data-sort]")) x.setAttribute("aria-pressed", x.dataset.sort === prefs.sort);
   }
   function bindTop() {
     syncSeg();
-    for (const b of document.querySelectorAll(".seg button")) {
+    for (const b of document.querySelectorAll(".seg button[data-mode]")) {
       b.addEventListener("click", () => { prefs.topMode = b.dataset.mode; syncSeg(); render(); });
+    }
+    for (const b of document.querySelectorAll(".seg button[data-sort]")) {
+      b.addEventListener("click", () => { prefs.sort = b.dataset.sort; syncSeg(); render(); });
     }
     $("my-region").addEventListener("change", () => { prefs.myRegion = $("my-region").value; render(); });
     $("my-lang").addEventListener("change", () => { prefs.myLang = $("my-lang").value; render(); });
@@ -454,20 +448,6 @@
       for (const id of ["kids", "oneoff", "fresh"]) $(id).checked = false;
       $("q").value = "";
       render();
-    });
-    $("top").addEventListener("click", (e) => {
-      const b = e.target.closest("button[data-id]");
-      if (!b) return;
-      let el = document.getElementById("ev-" + b.dataset.id);
-      if (!el) { // событие скрыто фильтрами — сбрасываем их
-        $("reset").click();
-        el = document.getElementById("ev-" + b.dataset.id);
-      }
-      if (el) {
-        el.scrollIntoView({ behavior: "smooth", block: "start" });
-        el.classList.add("flash");
-        setTimeout(() => el.classList.remove("flash"), 1600);
-      }
     });
   }
 

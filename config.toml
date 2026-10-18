@@ -75,6 +75,12 @@ ravid-plotnik = "Равид Плотник"
 marina-maximilian = "Марина Максимилиан"
 lihi-toledano = "Лихи Толедано"
 
+[kinorai]
+# Кино на русском (дубляж) от прокатчика «КиноРай». Берём только кинотеатры этих городов;
+# залы IMAX — в любом городе.
+enabled = true
+cities = ["Хайфа"]
+
 [notify]
 # Утреннее личное сообщение от бота @IsraelAfishaBot.
 enabled = true

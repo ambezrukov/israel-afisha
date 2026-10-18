@@ -23,7 +23,9 @@ from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from . import notify, tg, tickchak
+import copy
+
+from . import kinorai, notify, tg, tickchak
 from .extract import Extractor
 from .store import Store
 
@@ -141,6 +143,31 @@ async def run(dry_run: bool) -> None:
                 added, merged = store.add(events, today)
                 log.info("  Tickchak: добавлено %d, склеено с известными %d", added, merged)
 
+        # Кино на русском от «Кинорая»: новые фильмы — через модель, у известных — только новые сеансы.
+        kcfg = cfg.get("kinorai", {})
+        if kcfg.get("enabled"):
+            try:
+                films = kinorai.schedule(kcfg.get("cities", ["Хайфа"]))
+            except Exception as err:  # noqa: BLE001 — сбой сайта не должен ронять весь сбор
+                log.warning("КиноРай: не удалось прочитать расписание (%s)", err)
+                films = {}
+            by_url = {s["url"]: e for e in store.events for s in e["sources"]}
+            new_posts = []
+            for url, film in films.items():
+                known = by_url.get(url)
+                if known:
+                    update = copy.deepcopy(known)
+                    for key in ("id", "first_seen", "updated"):
+                        update.pop(key, None)
+                    update["sessions"] = film["sessions"]
+                    update["same_as"] = known["id"]
+                    store.add([update], today)
+                else:
+                    new_posts.append(kinorai.film_post(url, film))
+            for batch in batches(new_posts, 3):
+                added, merged = store.add(extractor.extract(batch, today), today)
+                log.info("  КиноРай: новых фильмов %d, склеено с известными %d", added, merged)
+
         removed = store.prune(today, cfg["events"]["keep_past_days"], cfg["events"]["horizon_days"])
         log.info("Удалено устаревших: %d. Всего событий: %d", removed, len(store.events))
 
@@ -165,7 +192,7 @@ async def run(dry_run: bool) -> None:
             built = notify.build(store.upcoming(today), feedback, cfg["profile"], today, ncfg)
             if built:
                 try:
-                    notify.send(bot_token, ncfg["chat_id"], *built)
+                    notify.send_all(bot_token, ncfg["chat_id"], built)
                     log.info("Утреннее сообщение отправлено")
                 except Exception as err:  # noqa: BLE001 — сбой отправки не должен терять собранное
                     log.warning("Не удалось отправить утреннее сообщение: %s", err)

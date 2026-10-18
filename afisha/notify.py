@@ -2,7 +2,8 @@
 
 Каждый день — только новое со вчера: 🔔 любимые артисты и до N лучших по
 личной оценке. По четвергам — вдобавок «Мой топ на выходные».
-Под каждым событием кнопки 👍 / ✕ / 👎 (их обрабатывает сервер оценок).
+Каждое событие — отдельное беззвучное сообщение со своими кнопками
+«Интересно / Не сейчас / Не моё» (их обрабатывает сервер оценок).
 Если нового нет и сегодня не четверг — ничего не отправляем.
 """
 
@@ -51,7 +52,7 @@ def _score(e: dict, s: dict, profile: dict) -> int:
     return score
 
 
-def _line(n: int, e: dict, s: dict) -> str:
+def _line(e: dict, s: dict) -> str:
     when = f"до {_human(s['end_date'])}" if s.get("end_date") and s["end_date"] != s["date"] else _human(s["date"])
     if s.get("time"):
         when += f", {s['time']}"
@@ -60,13 +61,13 @@ def _line(n: int, e: dict, s: dict) -> str:
     fav = f"🔔 <b>{html.escape(e['favorite_artist'])}</b>\n" if e.get("favorite_artist") else ""
     meta = " · ".join(x for x in (when, place, price) if x)
     return (
-        f"{fav}{n}. {CAT_ICON.get(e['category'], '')} <b>{html.escape(e['title'])}</b>\n"
-        f"{html.escape(meta)}\n<i>{html.escape(e['summary'])}</i>"
+        f"{fav}{CAT_ICON.get(e['category'], '')} <b>{html.escape(e['title'])}</b>\n"
+        f"{html.escape(meta)}\n\n{html.escape(e['summary'])}"
     )
 
 
-def build(events: list[dict], feedback: dict, profile: dict, today: date, cfg: dict) -> tuple[str, list] | None:
-    """Текст сообщения и кнопки; None — если отправлять нечего."""
+def build(events: list[dict], feedback: dict, profile: dict, today: date, cfg: dict) -> list[tuple[str, list, bool]] | None:
+    """Сообщения (текст, кнопки, беззвучно): заголовок и по одному на событие; None — если отправлять нечего."""
     t = today.isoformat()
     voted = {x["id"] for kind in ("likes", "dislikes", "hidden") for x in feedback.get(kind, [])}
     horizon = (today + timedelta(days=cfg.get("new_horizon_days", 120))).isoformat()
@@ -101,34 +102,43 @@ def build(events: list[dict], feedback: dict, profile: dict, today: date, cfg: d
     if not (favs or others or weekend):
         return None
 
-    parts, buttons, n = [], [], 0
-    def add(block_title: str, items: list) -> None:
-        nonlocal n
-        if not items:
-            return
-        parts.append(f"<b>{block_title}</b>")
-        for e, s, _ in items:
-            n += 1
-            parts.append(_line(n, e, s))
-            buttons.append([
-                {"text": f"{n} 👍", "callback_data": f"v|up|{e['id']}"},
-                {"text": "✕", "callback_data": f"v|hide|{e['id']}"},
-                {"text": "👎", "callback_data": f"v|down|{e['id']}"},
-            ])
-    add("🔔 Любимые артисты", favs)
-    add("Новое для вас", others)
-    add("Мой топ на выходные", weekend)
-    buttons.append([{"text": "Открыть афишу", "web_app": {"url": cfg["site_url"]}}])
-    footer = "\n\n<i>👍 — интересно · ✕ — скрыть · 👎 — не моё</i>"
-    text = "\n\n".join(parts) + footer
-    if len(text) > 4000:  # предел Telegram — 4096 символов; без описаний сообщение короче
-        text = "\n\n".join(p.split("\n<i>")[0] for p in parts) + footer
-    return text[:4096], buttons
+    messages: list[tuple[str, list, bool]] = []
+    head = []
+    if favs:
+        head.append(f"🔔 любимые артисты: {len(favs)}")
+    if others:
+        head.append(f"новое для вас: {len(others)}")
+    if weekend:
+        head.append(f"на выходные: {len(weekend)}")
+    messages.append((
+        "<b>Доброе утро! Афиша на сегодня</b>\n" + " · ".join(head),
+        [[{"text": "Открыть афишу", "web_app": {"url": cfg["site_url"]}}]],
+        False,  # звук только у заголовка
+    ))
+    # У любимых артистов своя строка «🔔 Имя», отдельная подпись не нужна.
+    for label, items in (("", favs), ("✨ Новое для вас", others), ("📅 На выходные", weekend)):
+        for e, s_, _ in items:
+            buttons = [[
+                {"text": "👍 Интересно", "callback_data": f"v|up|{e['id']}"},
+                {"text": "🙈 Не сейчас", "callback_data": f"v|hide|{e['id']}"},
+                {"text": "👎 Не моё", "callback_data": f"v|down|{e['id']}"},
+            ]]
+            link = e.get("ticket_url") or (e.get("sources") or [{}])[0].get("url", "")
+            if link.startswith("http"):
+                buttons.append([{"text": "Билеты и подробности", "url": link}])
+            prefix = f"<i>{label}</i>\n" if label else ""
+            messages.append((prefix + _line(e, s_), buttons, True))
+    return messages
 
 
-def send(bot_token: str, chat_id: int | str, text: str, buttons: list) -> None:
+def send_all(bot_token: str, chat_id: int | str, messages: list[tuple[str, list, bool]]) -> None:
+    for text, buttons, silent in messages:
+        send(bot_token, chat_id, text, buttons, silent)
+
+
+def send(bot_token: str, chat_id: int | str, text: str, buttons: list, silent: bool = False) -> None:
     payload = {
-        "chat_id": chat_id, "text": text, "parse_mode": "HTML",
+        "chat_id": chat_id, "text": text[:4096], "parse_mode": "HTML", "disable_notification": silent,
         "disable_web_page_preview": True, "reply_markup": {"inline_keyboard": buttons},
     }
     req = urllib.request.Request(

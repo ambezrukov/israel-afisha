@@ -138,8 +138,20 @@ async function telegramWebhook(request, env) {
       await tg(env, "answerCallbackQuery", { callback_query_id: cb.id, text: "Оценки принимаются только от владельца афиши" });
     } else {
       await saveVote(env, id, vote, await eventTitle(env, id));
-      const answers = { up: "👍 Учтено", hide: "✕ Скрыто из вашего топа", down: "👎 Учтено — такое показывать реже" };
+      const answers = { up: "👍 Учтено: такое — чаще", hide: "🙈 Скрыто, вкус не меняю", down: "👎 Учтено: такое — реже" };
       await tg(env, "answerCallbackQuery", { callback_query_id: cb.id, text: answers[vote] || "Учтено" });
+      // Отмечаем выбранную кнопку прямо в сообщении; остальные строки клавиатуры (ссылки) не трогаем.
+      const labels = { up: "👍 Интересно", hide: "🙈 Не сейчас", down: "👎 Не моё" };
+      const rows = cb.message?.reply_markup?.inline_keyboard || [];
+      const voteRow = Object.entries(labels).map(([v, text]) => ({
+        text: v === vote ? `✓ ${text}` : text, callback_data: `v|${v}|${id}`,
+      }));
+      const keyboard = [voteRow, ...rows.filter((r) => !r.some((b) => String(b.callback_data || "").startsWith("v|")))];
+      if (cb.message) {
+        await tg(env, "editMessageReplyMarkup", {
+          chat_id: cb.message.chat.id, message_id: cb.message.message_id, reply_markup: { inline_keyboard: keyboard },
+        });
+      }
     }
     return new Response("ok");
   }

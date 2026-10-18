@@ -15,7 +15,7 @@
   <header class="hero">
     <div class="wrap">
       <h1>Афиша Израиля</h1>
-      <p class="sub">Концерты, театр, лекции, выставки и экскурсии — сводка из Telegram-каналов, обновляется каждое утро.</p>
+      <p class="sub">Концерты, театр, лекции, выставки и экскурсии — сводка из Telegram-каналов, израильских сайтов касс и кинопроката, обновляется каждое утро.</p>
       <p class="meta" id="meta">Загрузка…</p>
     </div>
   </header>
@@ -75,12 +75,19 @@
 
     </section>
 
-    <section aria-labelledby="top-h">
+    <section aria-labelledby="all-h">
       <div class="section-head">
-        <h2 id="top-h">Топ-10 ближайших</h2>
-        <div class="seg" role="group" aria-label="Какой топ показать">
-          <button type="button" data-mode="all">Общий</button>
-          <button type="button" data-mode="mine">Мой</button>
+        <h2 id="all-h">Афиша</h2>
+        <span class="hint" id="count"></span>
+      </div>
+      <div class="list-controls">
+        <div class="seg" role="group" aria-label="Чья оценка">
+          <button type="button" data-mode="all">Общий рейтинг</button>
+          <button type="button" data-mode="mine">Мой рейтинг</button>
+        </div>
+        <div class="seg" role="group" aria-label="Порядок">
+          <button type="button" data-sort="score">По оценке</button>
+          <button type="button" data-sort="date">По дате</button>
         </div>
       </div>
       <p class="hint top-hint" id="top-hint"></p>
@@ -100,15 +107,7 @@
         </div>
         <div class="chips" id="my-cats" role="group" aria-label="Что мне интересно"></div>
         <label class="toggle"><input type="checkbox" id="my-kids"> Хожу с детьми</label>
-        <p class="hint">Настройки и оценки 👍/👎 хранятся только на этом устройстве.</p>
-      </div>
-      <ol class="top" id="top"></ol>
-    </section>
-
-    <section aria-labelledby="all-h">
-      <div class="section-head">
-        <h2 id="all-h">Все события</h2>
-        <span class="hint" id="count"></span>
+        <p class="hint">Настройки и оценки хранятся только на этом устройстве.</p>
       </div>
 
       <div id="list"></div>
@@ -116,7 +115,7 @@
   </main>
 
   <footer class="wrap foot">
-    Данные собраны автоматически из открытых Telegram-каналов; описания — краткий пересказ.
+    Данные собраны автоматически из открытых Telegram-каналов и сайтов касс и кинопроката; описания — краткий пересказ.
     Перед походом проверяйте детали по ссылке на источник.
   </footer>
 
