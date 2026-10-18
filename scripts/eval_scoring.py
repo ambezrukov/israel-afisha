@@ -98,7 +98,9 @@ def gemini(profile: str, events: list[dict]) -> dict[str, float]:
                 out.update({x["id"]: x["personal"] for x in json.loads(r.text)["scores"]})
                 break
             except Exception as err:  # noqa: BLE001 — бесплатный тариф иногда отвечает «слишком часто»
-                print(f"  Gemini: повтор после ошибки {err}", file=sys.stderr)
+                if "limit: 0" in str(err) or attempt == 3:
+                    raise  # квоты нет совсем — ждать бессмысленно
+                print(f"  Gemini: повтор после ошибки {str(err)[:150]}", file=sys.stderr)
                 time.sleep(20 * (attempt + 1))
         time.sleep(7)  # бесплатный тариф: ограничение запросов в минуту
     return out
@@ -108,16 +110,29 @@ _GEMINI_MODEL: str | None = None
 
 
 def gemini_model(client) -> str:
-    """Самая свежая модель Gemini Flash из доступных ключу (без lite/image/tts/live)."""
+    """Первая модель Gemini, которая реально отвечает на бесплатном тарифе.
+
+    У части моделей бесплатная квота нулевая (ошибка 429 с limit: 0) — такие пропускаем сразу."""
     global _GEMINI_MODEL
     if _GEMINI_MODEL:
         return _GEMINI_MODEL
     names = [m.name.split("/")[-1] for m in client.models.list()]
-    flash = [n for n in names if "flash" in n and not any(x in n for x in ("lite", "image", "tts", "live", "audio", "exp", "preview"))]
-    flash = flash or [n for n in names if "flash" in n]
-    _GEMINI_MODEL = sorted(flash)[-1]
-    print(f"Gemini: модель {_GEMINI_MODEL}", file=sys.stderr)
-    return _GEMINI_MODEL
+    print(f"Gemini: доступные модели: {', '.join(sorted(names))}", file=sys.stderr)
+    skip = ("image", "tts", "live", "audio", "embedding", "aqa", "veo", "imagen")
+    candidates = [n for n in names if "gemini" in n and not any(x in n for x in skip)]
+    # сначала Flash (быстрые и обычно бесплатные), затем остальные; внутри — от новых к старым
+    candidates.sort(key=lambda n: ("flash" not in n, "lite" in n, n), reverse=False)
+    candidates = sorted(candidates, key=lambda n: ("flash" not in n, "lite" in n))
+    for name in candidates:
+        try:
+            client.models.generate_content(model=name, contents="ok")
+            _GEMINI_MODEL = name
+            print(f"Gemini: работает модель {name}", file=sys.stderr)
+            return name
+        except Exception as err:  # noqa: BLE001
+            print(f"Gemini: {name} недоступна ({str(err)[:120]})", file=sys.stderr)
+            time.sleep(2)
+    raise RuntimeError("ни одна модель Gemini не отвечает на бесплатном тарифе")
 
 
 JEV_LEVELS = [f"{n} — " + d for n, d in zip(range(1, 11), [
@@ -204,13 +219,15 @@ def main() -> None:
                 scores.update(fn(profile_without(set(fold)), [events[i] for i in fold]))
             full = fn(profile_without(set()), upcoming)
         except Exception as err:  # noqa: BLE001
-            report.append(f"| {name} | ошибка: {err} | | | |")
+            report.append(f"| {name} | ошибка: {str(err)[:200]} | | | |")
+            print(report[-1], flush=True)
             continue
         took = time.time() - start
         report.append(
             f"| {name} | {auc(scores, labels):.2f} | {mean(scores[i] for i in ids if labels[i] and i in scores):.1f} | "
             f"{mean(scores[i] for i in ids if not labels[i] and i in scores):.1f} | {took:.0f} с |"
         )
+        print(report[-1], flush=True)  # промежуточный результат — на случай, если прогон прервут
         tops[name] = sorted(upcoming, key=lambda e: -full.get(e["id"], 0))[:20]
     report += ["", "\\* Текущие оценки Sonnet ставились, когда модель видела все примеры, поэтому их AUC завышен.", ""]
     for name, top in tops.items():
