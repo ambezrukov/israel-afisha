@@ -1,0 +1,10 @@
+name: probe
+on: workflow_dispatch
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          for u in https://batsheva.smarticket.co.il/ https://www.gesher-theatre.co.il/ https://ht1.co.il/; do
+            echo "$u $(curl -s -o /dev/null -w '%{http_code}' -A 'Mozilla/5.0 (israel-afisha; personal digest)' $u)"
+          done
