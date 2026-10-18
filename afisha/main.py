@@ -92,6 +92,20 @@ def batches(posts: list[tg.Post], size: int):
         yield batch
 
 
+def scheduled_run_needed(cfg: dict, state: dict) -> bool:
+    """Плановый запуск по расписанию GitHub: работаем один раз в день, не раньше часа из настроек."""
+    if os.environ.get("GITHUB_EVENT_NAME") != "schedule":
+        return True  # ручной запуск — всегда
+    now = datetime.now(ZoneInfo(cfg["events"]["timezone"]))
+    if now.hour < cfg["events"].get("run_hour", 20):
+        log.info("Плановый запуск раньше %d:00 по Израилю — пропускаю", cfg["events"].get("run_hour", 20))
+        return False
+    if state.get("last_scheduled") == now.date().isoformat():
+        log.info("Сегодня плановый сбор уже был — пропускаю")
+        return False
+    return True
+
+
 async def run(dry_run: bool) -> None:
     cfg = load_config()
     tz = ZoneInfo(cfg["events"]["timezone"])
@@ -99,6 +113,8 @@ async def run(dry_run: bool) -> None:
     today = now.date()
 
     state = load_json(STATE_PATH, {})
+    if not scheduled_run_needed(cfg, state):
+        return
     store = Store(EVENTS_PATH)
     store.renormalize()
     feedback = load_feedback()
@@ -193,7 +209,7 @@ async def run(dry_run: bool) -> None:
         if dry_run:
             log.info("Пробный запуск: прочитанным не помечаю, позицию не сохраняю")
             return
-        # Утреннее личное сообщение — не чаще раза в день.
+        # Вечернее личное сообщение — не чаще раза в день.
         ncfg = cfg.get("notify", {})
         bot_token = os.environ.get("TG_BOT_TOKEN")
         if ncfg.get("enabled") and bot_token and (state.get("notified") != today.isoformat() or os.environ.get("FORCE_NOTIFY")) and not feedback.get("unavailable"):
@@ -201,13 +217,15 @@ async def run(dry_run: bool) -> None:
             if built:
                 try:
                     notify.send_all(bot_token, ncfg["chat_id"], built)
-                    log.info("Утреннее сообщение отправлено")
+                    log.info("Вечернее сообщение отправлено")
                 except Exception as err:  # noqa: BLE001 — сбой отправки не должен терять собранное
-                    log.warning("Не удалось отправить утреннее сообщение: %s", err)
+                    log.warning("Не удалось отправить вечернее сообщение: %s", err)
             else:
                 log.info("Нового для владельца нет — сообщение не отправляю")
             state["notified"] = today.isoformat()
 
+        if os.environ.get("GITHUB_EVENT_NAME") == "schedule":
+            state["last_scheduled"] = today.isoformat()
         if sig:
             state["feedback_sig"] = sig
         if tk_seen is not None:

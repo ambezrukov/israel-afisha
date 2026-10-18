@@ -12,7 +12,7 @@
 | Чтение Telegram | `afisha/tg.py` |
 | Разбор постов моделью | `afisha/extract.py` |
 | Хранение, склейка дублей, регионы | `afisha/store.py` |
-| Ежедневный запуск | `.github/workflows/daily.yml` (07:00 по Израилю летом) |
+| Ежедневный запуск | `.github/workflows/daily.yml` (20:00 по Израилю) |
 | Страница | `docs/` (GitHub Pages), данные — `docs/data/events.json` |
 | Позиция чтения каналов | `state/state.json` |
 

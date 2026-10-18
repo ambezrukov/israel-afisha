@@ -22,6 +22,8 @@ posts_per_request = 8
 
 [events]
 timezone = "Asia/Jerusalem"
+# Час планового ежедневного сбора по Израилю (расписание в .github/workflows/daily.yml).
+run_hour = 20
 # Через сколько дней после окончания событие удаляется из файла.
 keep_past_days = 3
 # Насколько далеко вперёд показываем события.
@@ -84,7 +86,7 @@ cities = ["Хайфа"]
 max_snapshot_age_days = 8
 
 [notify]
-# Утреннее личное сообщение от бота @IsraelAfishaBot.
+# Вечернее личное сообщение от бота @IsraelAfishaBot (после сбора, около 20:00).
 enabled = true
 chat_id = 66902800
 site_url = "https://ambezrukov.github.io/israel-afisha/"
