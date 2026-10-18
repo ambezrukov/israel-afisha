@@ -21,6 +21,7 @@ export default {
       if (url.pathname === "/api/feedback" && request.method === "GET") return await apiFeedback(request, env);
       if (url.pathname === "/tg" && request.method === "POST") return await telegramWebhook(request, env);
       if (url.pathname === "/setup" && request.method === "GET") return await setup(request, env, url);
+      if (url.pathname === "/fetch" && request.method === "GET") return await relay(request, env, url);
       return new Response("Not found", { status: 404 });
     } catch (err) {
       return cors(env, json({ error: String(err) }, 500));
@@ -166,6 +167,23 @@ async function telegramWebhook(request, env) {
     });
   }
   return new Response("ok");
+}
+
+// Посредник для утреннего сбора: сайт «Кинорая» не пускает облачные серверы GitHub.
+// Только для владельца ключа и только для страниц kinorai.co.il.
+async function relay(request, env, url) {
+  if (!bearerOk(request, env)) return json({ error: "forbidden" }, 403);
+  let target;
+  try { target = new URL(url.searchParams.get("url") || ""); } catch { return json({ error: "bad url" }, 400); }
+  if (target.protocol !== "https:" || target.hostname !== "kinorai.co.il") return json({ error: "host not allowed" }, 400);
+  const r = await fetch(target.toString(), {
+    headers: {
+      "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0 Safari/537.36",
+      "accept": "text/html,application/xhtml+xml",
+      "accept-language": "ru,he;q=0.8,en;q=0.6",
+    },
+  });
+  return new Response(await r.text(), { status: r.status, headers: { "content-type": "text/html; charset=utf-8" } });
 }
 
 // Однократная настройка бота: вебхук, кнопка меню и описание.

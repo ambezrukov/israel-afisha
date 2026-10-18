@@ -9,6 +9,10 @@ on:
         description: "Только пересчитать оценки собранных событий (без чтения Telegram)"
         type: boolean
         default: false
+      force_notify:
+        description: "Отправить утреннее сообщение ещё раз, даже если сегодня уже отправляли"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -40,6 +44,7 @@ jobs:
           FEEDBACK_URL: ${{ secrets.FEEDBACK_URL }}
           FEEDBACK_KEY: ${{ secrets.FEEDBACK_KEY }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          FORCE_NOTIFY: ${{ inputs.force_notify && '1' || '' }}
         run: python -m afisha.main ${{ inputs.rescore && '--rescore' || '' }}
 
       - name: Сохранить результат

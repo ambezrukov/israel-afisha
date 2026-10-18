@@ -188,7 +188,7 @@ async def run(dry_run: bool) -> None:
         # Утреннее личное сообщение — не чаще раза в день.
         ncfg = cfg.get("notify", {})
         bot_token = os.environ.get("TG_BOT_TOKEN")
-        if ncfg.get("enabled") and bot_token and state.get("notified") != today.isoformat() and not feedback.get("unavailable"):
+        if ncfg.get("enabled") and bot_token and (state.get("notified") != today.isoformat() or os.environ.get("FORCE_NOTIFY")) and not feedback.get("unavailable"):
             built = notify.build(store.upcoming(today), feedback, cfg["profile"], today, ncfg)
             if built:
                 try:

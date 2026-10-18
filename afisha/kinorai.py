@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import html
+import os
 import logging
 import re
 import urllib.parse
@@ -31,7 +32,14 @@ ROW = re.compile(
 
 
 def _get(url: str) -> str:
-    req = urllib.request.Request(url, headers={"user-agent": "Mozilla/5.0 (israel-afisha; personal digest)"})
+    # Сайт за защитой Cloudflare не пускает облачные серверы GitHub, поэтому в облаке
+    # ходим через свой сервер оценок (адрес — из FEEDBACK_URL, ключ — FEEDBACK_KEY).
+    feedback_url, key = os.environ.get("FEEDBACK_URL"), os.environ.get("FEEDBACK_KEY")
+    if feedback_url and key:
+        relay = feedback_url.replace("/api/feedback", "/fetch") + "?url=" + urllib.parse.quote(url, safe="")
+        req = urllib.request.Request(relay, headers={"authorization": f"Bearer {key}", "user-agent": "israel-afisha"})
+    else:
+        req = urllib.request.Request(url, headers={"user-agent": "Mozilla/5.0 (israel-afisha; personal digest)"})
     with urllib.request.urlopen(req, timeout=30) as r:
         return r.read().decode("utf-8", "replace")
 
