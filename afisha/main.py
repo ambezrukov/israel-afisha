@@ -196,7 +196,9 @@ async def run(dry_run: bool) -> None:
         et_cfg = cfg.get("ethos", {})
         et_seen = None
         if et_cfg.get("enabled"):
-            et_posts, et_seen = ethos.fetch_new(et_cfg.get("categories", {}), state.get("ethos_seen", []), today)
+            et_posts, et_seen = ethos.fetch_new(
+                et_cfg.get("categories", {}), state.get("ethos_seen", []), today, et_cfg.get("russian_only", []),
+            )
             for batch in batches(et_posts, et_cfg.get("posts_per_request", 15)):
                 added, merged = store.add(extractor.extract(batch, today), today)
                 log.info("  Этос: добавлено %d, склеено с известными %d", added, merged)

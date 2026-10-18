@@ -52,9 +52,24 @@ def _details(url: str) -> str:
     return page_text(page[i : i + 15000], BASE, "")[:1500]
 
 
-def fetch_new(categories: dict[str, str], seen: list[str], today: date) -> tuple[list[Post], list[str]]:
-    """Новые события по категориям (код категории → название). seen — id уже отданных модели."""
+# Признаки русского языка у фильма: кириллица в названии/описании или упоминание на иврите
+# («רוסית» — русский язык, в т.ч. «כתוביות ברוסית» — субтитры, «דיבוב לרוסית» — дубляж; «רוסיה» — Россия).
+# Одиночное «רוסי» не берём: так пишутся и имена (Росси де Пальма).
+RUSSIAN = re.compile(r"[А-Яа-яЁё]{3,}|רוסית|רוסיה")
+
+
+def is_russian(text: str) -> bool:
+    return bool(RUSSIAN.search(text))
+
+
+def fetch_new(
+    categories: dict[str, str], seen: list[str], today: date, russian_only: list[str] | None = None,
+) -> tuple[list[Post], list[str]]:
+    """Новые события по категориям (код категории → название). seen — id уже отданных модели.
+    russian_only — разделы (например, синематека), из которых берём только кино на русском."""
+    russian_only = set(russian_only or [])
     cards: dict[str, tuple[str, str, str]] = {}
+    codes: dict[str, str] = {}
     for code, label in categories.items():
         found = 0
         for start in range(MAX_PORTIONS):
@@ -72,16 +87,21 @@ def fetch_new(categories: dict[str, str], seen: list[str], today: date) -> tuple
                 url, eid, body = parts[i], parts[i + 1], parts[i + 2]
                 body = "\n".join(x for x in body.split("\n") if x and x not in ("לרכישה ופרטים", "Tickets & Info"))
                 cards.setdefault(eid, (url, body, label))
+                codes.setdefault(eid, code)
                 found += 1
             time.sleep(0.5)  # бережно к сайту
         log.info("Этос /%s (%s): карточек %d", code, label, found)
 
     new_posts = []
+    skipped = 0
     for eid, (url, body, label) in cards.items():
         if eid in seen:
             continue
         about = _details(url)  # описание открываем только для новых событий
         time.sleep(0.3)
+        if codes[eid] in russian_only and not is_russian(f"{body}\n{about}"):
+            skipped += 1  # не на русском — модели не отдаём, но запоминаем, чтобы не проверять снова
+            continue
         new_posts.append(Post(
             channel_id=0, channel_title=CHANNEL_TITLE, channel_username="", message_id=int(eid),
             posted_at="", url=url,
@@ -90,5 +110,5 @@ def fetch_new(categories: dict[str, str], seen: list[str], today: date) -> tuple
                   f"Описание: {about}\nБилеты: {url}"),
         ))
     # Помним только то, что ещё есть на сайте, — прошедшие события выпадают сами.
-    log.info("Этос: новых событий %d из %d", len(new_posts), len(cards))
+    log.info("Этос: новых событий %d из %d (отсеяно не на русском: %d)", len(new_posts), len(cards), skipped)
     return new_posts, sorted(cards)
