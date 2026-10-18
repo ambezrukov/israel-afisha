@@ -25,8 +25,8 @@ from zoneinfo import ZoneInfo
 
 import copy
 
-from . import ethos, kinorai, notify, tg, tickchak, webpages
-from .extract import Extractor
+from . import ethos, kinorai, notify, personal, tg, tickchak, webpages
+from .extract import Extractor, profile_text
 from .store import Store
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -247,13 +247,22 @@ async def run(dry_run: bool) -> None:
         removed = store.prune(today, cfg["events"]["keep_past_days"], cfg["events"]["horizon_days"])
         log.info("Удалено устаревших: %d. Всего событий: %d", removed, len(store.events))
 
-        # Владелец поставил новые 👍/👎 — пересчитываем личные оценки всех будущих событий.
+        # Личные оценки ставит Jev: новым событиям — всегда, всем будущим — если у владельца
+        # появились новые 👍/👎. Без ключа Jev остаются оценки, поставленные при разборе.
         sig = None
         if not feedback.get("unavailable"):
             sig = feedback_signature(feedback)
-            if sig != state.get("feedback_sig"):
-                log.info("Есть новые оценки владельца — пересчитываю оценки будущих событий")
-                rescore_store(store, extractor, today)
+        upcoming = store.upcoming(today)
+        if personal.available():
+            profile = profile_text(cfg["profile"], feedback)
+            if sig and sig != state.get("feedback_sig"):
+                log.info("Есть новые оценки владельца — пересчитываю личные оценки будущих событий")
+                personal.score(upcoming, profile)
+            else:
+                personal.score([e for e in upcoming if e.get("personal_by") != "jev"], profile)
+        elif sig and sig != state.get("feedback_sig"):
+            log.info("Есть новые оценки владельца — пересчитываю оценки будущих событий")
+            rescore_store(store, extractor, today)
         store.save(now.isoformat(timespec="minutes"), cfg["profile"])
         push_events()
 
@@ -306,7 +315,10 @@ def rescore() -> None:
     extractor = Extractor(
         cfg["model"]["id"], cfg["model"]["effort"], cfg["profile"], load_feedback(), store.upcoming(now.date()),
     )
-    rescore_store(store, extractor, now.date())
+    if personal.available():
+        personal.score(store.upcoming(now.date()), profile_text(cfg["profile"], load_feedback()))
+    else:
+        rescore_store(store, extractor, now.date())
     store.save(now.isoformat(timespec="minutes"), cfg["profile"])
     push_events()
 

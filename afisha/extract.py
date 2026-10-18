@@ -257,12 +257,13 @@ class Extractor:
         self.context = profile_text(profile, feedback) + "\n\n" + known_events_text(known)
 
     def _call(self, rules: str, schema: dict, content: list[dict]) -> dict | None:
+        # Запасная модель при отказе есть у Sonnet/Opus; у Haiku её нет — параметр не передаём.
+        extra = {} if "haiku" in self.model else {"betas": ["server-side-fallback-2026-07-01"], "fallbacks": "default"}
         # Потоковый режим: при большом лимите ответа обычный запрос может упереться в таймаут.
         with self.client.beta.messages.stream(
             model=self.model,
             max_tokens=32000,
-            betas=["server-side-fallback-2026-07-01"],
-            fallbacks="default",
+            **extra,
             system=[
                 {"type": "text", "text": rules},
                 {"type": "text", "text": self.context, "cache_control": {"type": "ephemeral"}},

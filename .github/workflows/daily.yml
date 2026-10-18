@@ -47,6 +47,7 @@ jobs:
           FEEDBACK_URL: ${{ secrets.FEEDBACK_URL }}
           FEEDBACK_KEY: ${{ secrets.FEEDBACK_KEY }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TYPESAFE_API_KEY: ${{ secrets.TYPESAFE_API_KEY }}
           FORCE_NOTIFY: ${{ inputs.force_notify && '1' || '' }}
         run: python -m afisha.main ${{ inputs.rescore && '--rescore' || '' }}
 

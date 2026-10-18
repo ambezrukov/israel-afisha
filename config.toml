@@ -15,7 +15,7 @@ image_if_text_shorter_than = 150
 max_images_per_post = 4
 
 [model]
-id = "claude-sonnet-5-5"
+id = "claude-haiku-5-5"
 effort = "medium"
 # Сколько постов отправлять модели за один запрос.
 posts_per_request = 8
