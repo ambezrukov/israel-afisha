@@ -12,6 +12,10 @@ on:
         description: "Только пересчитать оценки собранных событий (без чтения Telegram)"
         type: boolean
         default: false
+      scheduled:
+        description: "Плановый запуск (ставит сервер по расписанию Cloudflare)"
+        type: boolean
+        default: false
       force_notify:
         description: "Отправить вечернее сообщение ещё раз, даже если сегодня уже отправляли"
         type: boolean
@@ -49,6 +53,7 @@ jobs:
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TYPESAFE_API_KEY: ${{ secrets.TYPESAFE_API_KEY }}
           FORCE_NOTIFY: ${{ inputs.force_notify && '1' || '' }}
+          AFISHA_SCHEDULED: ${{ (github.event_name == 'schedule' || inputs.scheduled) && '1' || '' }}
         run: python -m afisha.main ${{ inputs.rescore && '--rescore' || '' }}
 
       - name: Сохранить результат

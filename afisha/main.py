@@ -126,7 +126,7 @@ def batches(posts: list[tg.Post], size: int):
 
 def scheduled_run_needed(cfg: dict, state: dict) -> bool:
     """Плановый запуск по расписанию GitHub: работаем один раз в день, не раньше часа из настроек."""
-    if os.environ.get("GITHUB_EVENT_NAME") != "schedule":
+    if not os.environ.get("AFISHA_SCHEDULED"):
         return True  # ручной запуск — всегда
     now = datetime.now(ZoneInfo(cfg["events"]["timezone"]))
     if now.hour < cfg["events"].get("run_hour", 20):
@@ -286,7 +286,7 @@ async def run(dry_run: bool) -> None:
                 log.info("Нового для владельца нет — сообщение не отправляю")
             state["notified"] = today.isoformat()
 
-        if os.environ.get("GITHUB_EVENT_NAME") == "schedule":
+        if os.environ.get("AFISHA_SCHEDULED"):
             state["last_scheduled"] = today.isoformat()
         if sig:
             state["feedback_sig"] = sig

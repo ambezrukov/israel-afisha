@@ -12,6 +12,12 @@ const VOTES_KEY = "votes";
 const INIT_DATA_MAX_AGE = 30 * 24 * 3600; // сек.; мини-апп может быть открыт долго
 
 export default {
+  // Расписание Cloudflare (17:00 и 18:00 UTC = 20:00 по Израилю летом и зимой): даём GitHub
+  // команду запустить сбор. Лишний из двух запусков программа сбора пропускает сама.
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil(triggerCollection(env));
+  },
+
   async fetch(request, env) {
     const url = new URL(request.url);
     if (request.method === "OPTIONS") return cors(env, new Response(null, { status: 204 }));
@@ -23,6 +29,10 @@ export default {
       if (url.pathname === "/api/feedback" && request.method === "GET") return await apiFeedback(request, env);
       if (url.pathname === "/tg" && request.method === "POST") return await telegramWebhook(request, env);
       if (url.pathname === "/setup" && request.method === "GET") return await setup(request, env, url);
+      if (url.pathname === "/trigger" && request.method === "POST") {
+        if (!bearerOk(request, env)) return json({ error: "forbidden" }, 403);
+        return json({ github_status: await triggerCollection(env) });
+      }
       if (url.pathname === "/kinorai" && (request.method === "GET" || request.method === "PUT")) return await kinoraiSnapshot(request, env);
       return new Response("Not found", { status: 404 });
     } catch (err) {
@@ -30,6 +40,22 @@ export default {
     }
   },
 };
+
+// ---------- Запуск сбора на GitHub ----------
+async function triggerCollection(env) {
+  const r = await fetch("https://api.github.com/repos/ambezrukov/israel-afisha/actions/workflows/daily.yml/dispatches", {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${env.GH_TRIGGER_TOKEN}`,
+      accept: "application/vnd.github+json",
+      "user-agent": "israel-afisha-worker",
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({ ref: "main", inputs: { scheduled: true } }),
+  });
+  if (r.status !== 204) console.log("GitHub: запуск не принят", r.status, await r.text());
+  return r.status;
+}
 
 // ---------- Ответы ----------
 function json(data, status = 200) {

@@ -2,6 +2,10 @@ name = "israel-afisha"
 main = "src/index.js"
 compatibility_date = "2026-10-01"
 
+# Ежедневный запуск сбора: 17:00 и 18:00 UTC = 20:00 по Израилю летом и зимой.
+[triggers]
+crons = ["0 17 * * *", "0 18 * * *"]
+
 [vars]
 OWNER_ID = "66902800"
 SITE_URL = "https://ambezrukov.github.io/israel-afisha/"
